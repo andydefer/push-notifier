@@ -1,0 +1,35 @@
+{
+    "authors": [
+        {
+            "email": "andykanidimbu@gmail.com",
+            "name": "Andy Kani"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Andydefer\\PushNotifier\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Andydefer\\PushNotifier\\Tests\\": "tests/"
+        }
+    },
+    "description": "A robust PHP package for sending push notifications via Firebase Cloud Messaging (FCM)",
+    "license": "MIT",
+    "minimum-stability": "stable",
+    "name": "andydefer/push-notifier",
+    "prefer-stable": true,
+    "require": {
+        "guzzlehttp/guzzle": "^7.10",
+        "nesbot/carbon": "^3.0",
+        "php": "^8.1",
+        "spatie/laravel-data": "^4.0"
+    },
+    "require-dev": {
+        "mockery/mockery": "^1.6",
+        "phpunit/phpunit": "^11.0",
+        "symfony/var-dumper": "^7.4"
+    },
+    "type": "library"
+}
