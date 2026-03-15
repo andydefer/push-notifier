@@ -9,6 +9,7 @@ use Andydefer\PushNotifier\Core\Contracts\HttpClientInterface;
 use Andydefer\PushNotifier\Dtos\FirebaseConfigData;
 use Andydefer\PushNotifier\Exceptions\FirebaseAuthException;
 use Carbon\CarbonImmutable;
+use RuntimeException;
 
 class FirebaseAuthProvider implements AuthProviderInterface
 {
@@ -30,24 +31,32 @@ class FirebaseAuthProvider implements AuthProviderInterface
      */
     public function getAccessToken(FirebaseConfigData $config): string
     {
-        // Clear cache if project changed
-        if ($this->lastProjectId !== null && $this->lastProjectId !== $config->projectId) {
-            $this->clearCache();
-        }
+        try {
+            // Clear cache if project changed
+            if ($this->lastProjectId !== null && $this->lastProjectId !== $config->projectId) {
+                $this->clearCache();
+            }
 
-        // Return cached token if still valid
-        if ($this->cachedToken !== null && $this->tokenExpiry !== null && time() < $this->tokenExpiry) {
+            // Return cached token if still valid
+            if ($this->cachedToken !== null && $this->tokenExpiry !== null && time() < $this->tokenExpiry) {
+                return $this->cachedToken;
+            }
+
+            $jwt = $this->generateJwt($config);
+            $tokenData = $this->exchangeJwtForToken($config, $jwt);
+
+            $this->cachedToken = $tokenData['access_token'];
+            $this->tokenExpiry = time() + ($tokenData['expires_in'] ?? self::TOKEN_LIFETIME);
+            $this->lastProjectId = $config->projectId;
+
             return $this->cachedToken;
+        } catch (RuntimeException $exception) {
+            // Catch and transform any HTTP client errors
+            throw new FirebaseAuthException(
+                "Failed to obtain access token: HTTP 0 - " . $exception->getMessage(),
+                $exception
+            );
         }
-
-        $jwt = $this->generateJwt($config);
-        $tokenData = $this->exchangeJwtForToken($config, $jwt);
-
-        $this->cachedToken = $tokenData['access_token'];
-        $this->tokenExpiry = time() + ($tokenData['expires_in'] ?? self::TOKEN_LIFETIME);
-        $this->lastProjectId = $config->projectId;
-
-        return $this->cachedToken;
     }
 
     /**
@@ -72,7 +81,7 @@ class FirebaseAuthProvider implements AuthProviderInterface
      *
      * @throws FirebaseAuthException
      */
-    private function generateJwt(FirebaseConfigData $config): string
+    public function generateJwt(FirebaseConfigData $config): string
     {
         $header = $this->base64UrlEncode(json_encode([
             'alg' => 'RS256',
@@ -114,27 +123,35 @@ class FirebaseAuthProvider implements AuthProviderInterface
      */
     private function exchangeJwtForToken(FirebaseConfigData $config, string $jwt): array
     {
-        $response = $this->httpClient->post($config->tokenUri, [
-            'form_params' => [
-                'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                'assertion' => $jwt,
-            ],
-        ]);
+        try {
+            $response = $this->httpClient->post($config->tokenUri, [
+                'form_params' => [
+                    'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                    'assertion' => $jwt,
+                ],
+            ]);
 
-        if (!$response->isSuccessful() || $response->data === null) {
-            $error = $response->data['error'] ?? 'Unknown error';
-            $description = $response->data['error_description'] ?? '';
+            if (!$response->isSuccessful() || $response->data === null) {
+                $error = $response->data['error'] ?? 'Unknown error';
+                $description = $response->data['error_description'] ?? '';
 
+                throw new FirebaseAuthException(
+                    "Failed to obtain access token: HTTP {$response->statusCode} - {$error} {$description}"
+                );
+            }
+
+            if (!isset($response->data['access_token'])) {
+                throw new FirebaseAuthException('OAuth response missing access_token');
+            }
+
+            return $response->data;
+        } catch (RuntimeException $exception) {
+            // Catch and transform HTTP client errors during token exchange
             throw new FirebaseAuthException(
-                "Failed to obtain access token: HTTP {$response->statusCode} - {$error} {$description}"
+                "Failed to obtain access token: HTTP 0 - " . $exception->getMessage(),
+                $exception
             );
         }
-
-        if (!isset($response->data['access_token'])) {
-            throw new FirebaseAuthException('OAuth response missing access_token');
-        }
-
-        return $response->data;
     }
 
     /**
