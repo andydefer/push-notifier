@@ -7,13 +7,25 @@ namespace Andydefer\PushNotifier\Dtos;
 use Spatie\LaravelData\Data;
 use Andydefer\PushNotifier\Exceptions\InvalidConfigurationException;
 
+/**
+ * Firebase project authentication configuration.
+ *
+ * This data transfer object encapsulates all credentials and settings required
+ * for authenticating with Firebase Cloud Messaging using a service account.
+ * It ensures the private key format is valid and provides multiple factory methods
+ * for flexible configuration loading.
+ */
 class FirebaseConfigData extends Data
 {
     /**
-     * @param string $projectId Firebase project ID
-     * @param string $clientEmail Service account client email
-     * @param string $privateKey Private key for JWT signing (preserved with newlines)
-     * @param string $tokenUri OAuth2 token URI
+     * Creates a new Firebase configuration instance.
+     *
+     * @param string $projectId Firebase project unique identifier
+     * @param string $clientEmail Service account email for authentication
+     * @param string $privateKey PEM-formatted private key (preserves newlines)
+     * @param string $tokenUri OAuth2 token endpoint URL
+     *
+     * @throws InvalidConfigurationException When private key format is invalid
      */
     public function __construct(
         public readonly string $projectId,
@@ -21,110 +33,141 @@ class FirebaseConfigData extends Data
         public readonly string $privateKey,
         public readonly string $tokenUri = 'https://oauth2.googleapis.com/token',
     ) {
-        $this->validatePrivateKey();
+        $this->ensurePrivateKeyHasValidFormat();
     }
 
     /**
-     * Validate that the private key has the correct format.
+     * Validates the private key contains proper PEM markers.
      *
-     * @throws InvalidConfigurationException
+     * @throws InvalidConfigurationException When key lacks required BEGIN/END markers
      */
-    private function validatePrivateKey(): void
+    private function ensurePrivateKeyHasValidFormat(): void
     {
         if (!str_contains($this->privateKey, '-----BEGIN PRIVATE KEY-----')) {
             throw new InvalidConfigurationException(
-                'Invalid private key format: Must contain BEGIN PRIVATE KEY marker'
+                'Invalid private key format: Missing BEGIN PRIVATE KEY marker'
             );
         }
 
         if (!str_contains($this->privateKey, '-----END PRIVATE KEY-----')) {
             throw new InvalidConfigurationException(
-                'Invalid private key format: Must contain END PRIVATE KEY marker'
+                'Invalid private key format: Missing END PRIVATE KEY marker'
             );
         }
     }
 
     /**
-     * Create from Firebase service account JSON string.
-     * This is the recommended way to initialize the config.
+     * Creates configuration from a Firebase service account JSON string.
+     *
+     * This is the primary method for loading credentials from Google Cloud
+     * Console downloads. Preserves the exact key format from the source.
      *
      * @param string $jsonContent Raw JSON content from service account file
-     * @throws InvalidConfigurationException
+     * @return self Configured Firebase credentials
+     *
+     * @throws InvalidConfigurationException When JSON is malformed or invalid
      */
     public static function fromJsonString(string $jsonContent): self
     {
-        $data = json_decode($jsonContent, true);
+        $serviceAccountData = json_decode($jsonContent, true);
 
-        if (!is_array($data)) {
-            throw new InvalidConfigurationException('Invalid Firebase service account JSON');
+        if (!is_array($serviceAccountData)) {
+            throw new InvalidConfigurationException('Invalid Firebase service account JSON: Malformed content');
         }
 
-        return self::fromServiceAccount($data);
+        return self::fromServiceAccount($serviceAccountData);
     }
 
     /**
-     * Create from Firebase service account JSON file path.
-     * This preserves the private key exactly as in the file.
+     * Creates configuration from a Firebase service account JSON file.
      *
-     * @param string $jsonPath Path to service account JSON file
-     * @throws InvalidConfigurationException
+     * Convenience method for loading credentials directly from a file path.
+     * The private key formatting is preserved exactly as stored in the file.
+     *
+     * @param string $jsonPath Absolute or relative path to service account JSON file
+     * @return self Configured Firebase credentials
+     *
+     * @throws InvalidConfigurationException When file is missing or unreadable
      */
     public static function fromJsonFile(string $jsonPath): self
     {
         if (!file_exists($jsonPath)) {
-            throw new InvalidConfigurationException("Firebase config file not found: {$jsonPath}");
+            throw new InvalidConfigurationException("Firebase service account file not found: {$jsonPath}");
         }
 
-        $content = file_get_contents($jsonPath);
-        if ($content === false) {
-            throw new InvalidConfigurationException("Failed to read Firebase config file: {$jsonPath}");
+        $fileContents = file_get_contents($jsonPath);
+        if ($fileContents === false) {
+            throw new InvalidConfigurationException("Unable to read Firebase service account file: {$jsonPath}");
         }
 
-        return self::fromJsonString($content);
+        return self::fromJsonString($fileContents);
     }
 
     /**
-     * Create from Firebase service account JSON array.
+     * Creates configuration from a parsed Firebase service account array.
+     *
+     * Processes the raw service account data structure and validates
+     * that all required fields are present.
      *
      * @param array{
      *     project_id: string,
      *     client_email: string,
      *     private_key: string,
      *     token_uri?: string
-     * } $data
-     * @throws InvalidConfigurationException
+     * } $serviceAccountData Parsed service account credentials
+     * @return self Configured Firebase credentials
+     *
+     * @throws InvalidConfigurationException When required fields are missing
      */
-    public static function fromServiceAccount(array $data): self
+    public static function fromServiceAccount(array $serviceAccountData): self
     {
-        $required = ['project_id', 'client_email', 'private_key'];
-        foreach ($required as $field) {
-            if (!isset($data[$field])) {
-                throw new InvalidConfigurationException("Missing required field: {$field}");
+        $requiredFields = ['project_id', 'client_email', 'private_key'];
+        foreach ($requiredFields as $field) {
+            if (!isset($serviceAccountData[$field])) {
+                throw new InvalidConfigurationException("Missing required service account field: {$field}");
             }
         }
 
         return new self(
-            projectId: $data['project_id'],
-            clientEmail: $data['client_email'],
-            privateKey: $data['private_key'],
-            tokenUri: $data['token_uri'] ?? 'https://oauth2.googleapis.com/token',
+            projectId: $serviceAccountData['project_id'],
+            clientEmail: $serviceAccountData['client_email'],
+            privateKey: $serviceAccountData['private_key'],
+            tokenUri: $serviceAccountData['token_uri'] ?? 'https://oauth2.googleapis.com/token',
         );
     }
 
     /**
-     * Create from environment variables.
-     * WARNING: Be careful with private key newlines in .env files!
+     * Creates configuration from environment variables.
      *
-     * @param array<string, string> $env
-     * @throws InvalidConfigurationException
+     * Note: When storing private keys in .env files, ensure newlines are
+     * properly escaped as \n to maintain the correct PEM format.
+     *
+     * @param array<string, string> $environmentVariables Environment variables array (e.g., $_ENV)
+     * @return self Configured Firebase credentials
+     *
+     * @throws InvalidConfigurationException When required environment variables are missing
      */
-    public static function fromEnv(array $env): self
+    public static function fromEnv(array $environmentVariables): self
     {
         return new self(
-            projectId: $env['FIREBASE_PROJECT_ID'] ?? throw new InvalidConfigurationException('Missing FIREBASE_PROJECT_ID'),
-            clientEmail: $env['FIREBASE_CLIENT_EMAIL'] ?? throw new InvalidConfigurationException('Missing FIREBASE_CLIENT_EMAIL'),
-            privateKey: str_replace('\\n', "\n", $env['FIREBASE_PRIVATE_KEY'] ?? throw new InvalidConfigurationException('Missing FIREBASE_PRIVATE_KEY')),
-            tokenUri: $env['FIREBASE_TOKEN_URI'] ?? 'https://oauth2.googleapis.com/token',
+            projectId: $environmentVariables['FIREBASE_PROJECT_ID'] ?? throw new InvalidConfigurationException('Missing required env: FIREBASE_PROJECT_ID'),
+            clientEmail: $environmentVariables['FIREBASE_CLIENT_EMAIL'] ?? throw new InvalidConfigurationException('Missing required env: FIREBASE_CLIENT_EMAIL'),
+            privateKey: self::normalizePrivateKeyFromEnv($environmentVariables['FIREBASE_PRIVATE_KEY'] ?? throw new InvalidConfigurationException('Missing required env: FIREBASE_PRIVATE_KEY')),
+            tokenUri: $environmentVariables['FIREBASE_TOKEN_URI'] ?? 'https://oauth2.googleapis.com/token',
         );
+    }
+
+    /**
+     * Converts escaped newlines in environment variable back to actual newlines.
+     *
+     * Environment variables often require escaping newlines as \n. This method
+     * restores them to the proper PEM format expected by cryptographic functions.
+     *
+     * @param string $rawPrivateKey Private key from environment with escaped newlines
+     * @return string Private key with actual newline characters
+     */
+    private static function normalizePrivateKeyFromEnv(string $rawPrivateKey): string
+    {
+        return str_replace('\\n', "\n", $rawPrivateKey);
     }
 }

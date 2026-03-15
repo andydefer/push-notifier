@@ -9,26 +9,31 @@ use Andydefer\PushNotifier\Core\Contracts\HttpClientInterface;
 use Andydefer\PushNotifier\Core\Contracts\PayloadBuilderInterface;
 use Andydefer\PushNotifier\Dtos\FirebaseConfigData;
 use Andydefer\PushNotifier\Dtos\FcmMessageData;
+use Andydefer\PushNotifier\Enums\NotificationType;
 use Andydefer\PushNotifier\Exceptions\FcmSendException;
 use Andydefer\PushNotifier\Http\HttpResponseData;
 use Andydefer\PushNotifier\Services\FirebaseService;
 use Andydefer\PushNotifier\Tests\TestCase;
 use Andydefer\PushNotifier\Tests\Fixtures\FirebaseConfigFixture;
 use Mockery;
+use Mockery\MockInterface;
 
 /**
- * Feature tests for FirebaseService.
+ * Feature tests validating FirebaseService behavior in real-world scenarios.
+ *
+ * Verifies notification delivery, error handling, token validation,
+ * and helper methods for various notification types.
  */
 final class FirebaseServiceTest extends TestCase
 {
-    private HttpClientInterface|Mockery\MockInterface $httpClient;
-    private AuthProviderInterface|Mockery\MockInterface $authProvider;
-    private PayloadBuilderInterface|Mockery\MockInterface $payloadBuilder;
+    private HttpClientInterface|MockInterface $httpClient;
+    private AuthProviderInterface|MockInterface $authProvider;
+    private PayloadBuilderInterface|MockInterface $payloadBuilder;
     private FirebaseService $firebaseService;
     private FirebaseConfigData $config;
 
     /**
-     * Set up test environment.
+     * Sets up the test environment with mocked dependencies.
      */
     protected function setUp(): void
     {
@@ -39,7 +44,7 @@ final class FirebaseServiceTest extends TestCase
         $this->payloadBuilder = Mockery::mock(PayloadBuilderInterface::class);
 
         $this->config = FirebaseConfigData::fromServiceAccount(
-            FirebaseConfigFixture::getValidConfig()
+            serviceAccountData: FirebaseConfigFixture::getValidConfig()
         );
 
         $this->firebaseService = new FirebaseService(
@@ -49,14 +54,15 @@ final class FirebaseServiceTest extends TestCase
             config: $this->config
         );
     }
+
     /**
-     * Test successful notification send.
+     * Verifies successful notification delivery with all required parameters.
      */
     public function test_can_send_notification_successfully(): void
     {
-        // Arrange
+        // Arrange: Configure mocks for successful FCM API interaction
         $deviceToken = 'test-device-token-123';
-        $message = FcmMessageData::info('Test Title', 'Test Body');
+        $message = FcmMessageData::info(title: 'Test Title', body: 'Test Body');
 
         $mockPayload = ['message' => ['token' => $deviceToken, 'data' => []]];
         $mockFcmResponse = FirebaseConfigFixture::getMockFcmResponse();
@@ -86,10 +92,10 @@ final class FirebaseServiceTest extends TestCase
                 data: $mockFcmResponse
             ));
 
-        // Act
-        $response = $this->firebaseService->send($deviceToken, $message);
+        // Act: Send the notification
+        $response = $this->firebaseService->send(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Verify successful response structure
         $this->assertTrue($response->success);
         $this->assertEquals('msg-123456789', $response->messageId);
         $this->assertEquals('projects/test-project-123/messages/msg-123456789', $response->name);
@@ -97,11 +103,11 @@ final class FirebaseServiceTest extends TestCase
     }
 
     /**
-     * Test that sendInfo helper works correctly.
+     * Confirms that the info notification helper properly constructs messages.
      */
     public function test_send_info_helper_works_correctly(): void
     {
-        // Arrange
+        // Arrange: Set up expectations for info notification
         $deviceToken = 'test-token';
 
         $this->authProvider
@@ -128,23 +134,23 @@ final class FirebaseServiceTest extends TestCase
                 data: FirebaseConfigFixture::getMockFcmResponse()
             ));
 
-        // Act
+        // Act: Use the info helper
         $response = $this->firebaseService->sendInfo(
-            $deviceToken,
-            'Info Title',
-            'Info Body'
+            deviceToken: $deviceToken,
+            title: 'Info Title',
+            body: 'Info Body'
         );
 
-        // Assert
+        // Assert: Verify successful delivery
         $this->assertTrue($response->success);
     }
 
     /**
-     * Test that ping helper works correctly.
+     * Validates that ping notifications are properly configured for silent delivery.
      */
     public function test_ping_helper_works_correctly(): void
     {
-        // Arrange
+        // Arrange: Configure expectations for silent ping
         $deviceToken = 'test-token';
 
         $this->authProvider
@@ -170,19 +176,19 @@ final class FirebaseServiceTest extends TestCase
                 data: FirebaseConfigFixture::getMockFcmResponse()
             ));
 
-        // Act
-        $response = $this->firebaseService->ping($deviceToken);
+        // Act: Send silent ping
+        $response = $this->firebaseService->ping(deviceToken: $deviceToken);
 
-        // Assert
+        // Assert: Confirm ping was accepted
         $this->assertTrue($response->success);
     }
 
     /**
-     * Test that validateToken returns true for valid token.
+     * Ensures token validation correctly identifies valid device tokens.
      */
     public function test_validate_token_returns_true_for_valid_token(): void
     {
-        // Arrange
+        // Arrange: Set up successful ping response
         $deviceToken = 'valid-token';
 
         $this->authProvider
@@ -203,19 +209,19 @@ final class FirebaseServiceTest extends TestCase
                 data: FirebaseConfigFixture::getMockFcmResponse()
             ));
 
-        // Act
-        $result = $this->firebaseService->validateToken($deviceToken);
+        // Act: Validate the token
+        $result = $this->firebaseService->validateToken(deviceToken: $deviceToken);
 
-        // Assert
+        // Assert: Token should be considered valid
         $this->assertTrue($result);
     }
 
     /**
-     * Test that validateToken returns false for invalid token.
+     * Verifies that token validation correctly identifies expired/invalid tokens.
      */
     public function test_validate_token_returns_false_for_invalid_token(): void
     {
-        // Arrange
+        // Arrange: Simulate FCM error for unregistered token
         $deviceToken = 'invalid-token';
 
         $this->authProvider
@@ -233,24 +239,27 @@ final class FirebaseServiceTest extends TestCase
             ->once()
             ->andReturn(new HttpResponseData(
                 statusCode: 404,
-                data: FirebaseConfigFixture::getMockFcmErrorResponse('UNREGISTERED', 'Not Found')
+                data: FirebaseConfigFixture::getMockFcmErrorResponse(
+                    errorCode: 'UNREGISTERED',
+                    errorMessage: 'Not Found'
+                )
             ));
 
-        // Act
-        $result = $this->firebaseService->validateToken($deviceToken);
+        // Act: Validate the token
+        $result = $this->firebaseService->validateToken(deviceToken: $deviceToken);
 
-        // Assert
+        // Assert: Token should be marked invalid
         $this->assertFalse($result);
     }
 
     /**
-     * Test that sendMulticast handles multiple tokens correctly.
+     * Confirms that multicast sends to all tokens and returns proper results.
      */
     public function test_send_multicast_handles_multiple_tokens(): void
     {
-        // Arrange
+        // Arrange: Prepare multiple device tokens
         $tokens = ['token1', 'token2', 'token3'];
-        $message = FcmMessageData::info('Batch', 'Test');
+        $message = FcmMessageData::info(title: 'Batch', body: 'Test');
 
         $this->authProvider
             ->shouldReceive('getAccessToken')
@@ -271,10 +280,13 @@ final class FirebaseServiceTest extends TestCase
                 new HttpResponseData(200, data: FirebaseConfigFixture::getMockFcmResponse())
             );
 
-        // Act
-        $results = $this->firebaseService->sendMulticast($tokens, $message);
+        // Act: Send to multiple devices
+        $results = $this->firebaseService->sendMulticast(
+            deviceTokens: $tokens,
+            message: $message
+        );
 
-        // Assert
+        // Assert: All sends should succeed
         $this->assertCount(3, $results);
         foreach ($results as $token => $response) {
             $this->assertTrue($response->success);
@@ -283,13 +295,13 @@ final class FirebaseServiceTest extends TestCase
     }
 
     /**
-     * Test that sendMulticast handles failures gracefully.
+     * Verifies that multicast continues processing even when individual sends fail.
      */
     public function test_send_multicast_handles_failures_gracefully(): void
     {
-        // Arrange
+        // Arrange: Mix of valid and invalid tokens
         $tokens = ['good-token', 'bad-token', 'good-token-2'];
-        $message = FcmMessageData::info('Batch', 'Test');
+        $message = FcmMessageData::info(title: 'Batch', body: 'Test');
 
         $this->authProvider
             ->shouldReceive('getAccessToken')
@@ -310,10 +322,13 @@ final class FirebaseServiceTest extends TestCase
                 new HttpResponseData(200, data: FirebaseConfigFixture::getMockFcmResponse())
             );
 
-        // Act
-        $results = $this->firebaseService->sendMulticast($tokens, $message);
+        // Act: Send batch notification
+        $results = $this->firebaseService->sendMulticast(
+            deviceTokens: $tokens,
+            message: $message
+        );
 
-        // Assert
+        // Assert: Results should reflect mixed success/failure
         $this->assertCount(3, $results);
         $this->assertTrue($results['good-token']->success);
         $this->assertFalse($results['bad-token']->success);
@@ -322,13 +337,13 @@ final class FirebaseServiceTest extends TestCase
     }
 
     /**
-     * Test that send throws exception on HTTP error.
+     * Ensures that HTTP errors properly trigger FcmSendException.
      */
     public function test_send_throws_exception_on_http_error(): void
     {
-        // Arrange
+        // Arrange: Simulate server error response
         $deviceToken = 'test-token';
-        $message = FcmMessageData::info('Test', 'Error');
+        $message = FcmMessageData::info(title: 'Test', body: 'Error');
 
         $this->authProvider
             ->shouldReceive('getAccessToken')
@@ -345,25 +360,28 @@ final class FirebaseServiceTest extends TestCase
             ->once()
             ->andReturn(new HttpResponseData(
                 statusCode: 500,
-                data: FirebaseConfigFixture::getMockFcmErrorResponse('INTERNAL', 'Server error')
+                data: FirebaseConfigFixture::getMockFcmErrorResponse(
+                    errorCode: 'INTERNAL',
+                    errorMessage: 'Server error'
+                )
             ));
 
-        // Assert
+        // Assert: Exception should be thrown
         $this->expectException(FcmSendException::class);
         $this->expectExceptionMessage('FCM request failed: Server error');
 
-        // Act
-        $this->firebaseService->send($deviceToken, $message);
+        // Act: Attempt to send (should throw)
+        $this->firebaseService->send(deviceToken: $deviceToken, message: $message);
     }
 
     /**
-     * Test that auth cache is cleared on auth errors.
+     * Verifies that authentication cache is cleared on auth-related errors.
      */
     public function test_auth_cache_is_cleared_on_auth_errors(): void
     {
-        // Arrange
+        // Arrange: Simulate authentication failure
         $deviceToken = 'test-token';
-        $message = FcmMessageData::info('Test', 'Auth Error');
+        $message = FcmMessageData::info(title: 'Test', body: 'Auth Error');
 
         $this->authProvider
             ->shouldReceive('getAccessToken')
@@ -384,31 +402,34 @@ final class FirebaseServiceTest extends TestCase
             ->once()
             ->andReturn(new HttpResponseData(
                 statusCode: 401,
-                data: FirebaseConfigFixture::getMockFcmErrorResponse('UNAUTHENTICATED', 'Invalid token')
+                data: FirebaseConfigFixture::getMockFcmErrorResponse(
+                    errorCode: 'UNAUTHENTICATED',
+                    errorMessage: 'Invalid token'
+                )
             ));
 
-        // Assert
+        // Assert: Exception should be thrown
         $this->expectException(FcmSendException::class);
 
-        // Act
-        $this->firebaseService->send($deviceToken, $message);
+        // Act: Attempt to send (should clear cache)
+        $this->firebaseService->send(deviceToken: $deviceToken, message: $message);
     }
 
     /**
-     * Test that sendAll helpers work correctly.
+     * Validates all notification type helpers (alert, warning, success, error).
      */
     public function test_all_send_helpers_work_correctly(): void
     {
-        // Arrange
+        // Arrange: Set up test data for each notification type
         $deviceToken = 'test-token';
-        $types = [
+        $notificationTypes = [
             'alert' => ['Alert', 'Alert Body'],
             'warning' => ['Warning', 'Warning Body'],
             'success' => ['Success', 'Success Body'],
             'error' => ['Error', 'Error Body'],
         ];
 
-        foreach ($types as $type => $params) {
+        foreach ($notificationTypes as $type => $params) {
             $this->authProvider
                 ->shouldReceive('getAccessToken')
                 ->once()
@@ -432,26 +453,29 @@ final class FirebaseServiceTest extends TestCase
                 ));
         }
 
-        // Act & Assert
-        $method = 'send' . ucfirst($type);
-        foreach ($types as $type => $params) {
+        // Act & Assert: Test each helper method
+        foreach ($notificationTypes as $type => $params) {
             $method = 'send' . ucfirst($type);
-            $response = $this->firebaseService->$method($deviceToken, $params[0], $params[1]);
+            $response = $this->firebaseService->$method(
+                deviceToken: $deviceToken,
+                title: $params[0],
+                body: $params[1]
+            );
             $this->assertTrue($response->success);
         }
     }
 
     /**
-     * Test that send with custom data preserves all fields.
+     * Ensures all custom notification fields are properly preserved.
      */
     public function test_send_with_custom_data_preserves_fields(): void
     {
-        // Arrange
+        // Arrange: Create message with all possible customizations
         $deviceToken = 'test-token';
         $customData = ['order_id' => '12345', 'user_id' => '67890'];
 
         $message = new FcmMessageData(
-            type: \Andydefer\PushNotifier\Enums\NotificationType::INFO,
+            type: NotificationType::INFO,
             title: 'Custom Title',
             body: 'Custom Body',
             data: $customData,
@@ -491,10 +515,10 @@ final class FirebaseServiceTest extends TestCase
                 data: FirebaseConfigFixture::getMockFcmResponse()
             ));
 
-        // Act
-        $response = $this->firebaseService->send($deviceToken, $message);
+        // Act: Send fully customized notification
+        $response = $this->firebaseService->send(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Verify delivery success
         $this->assertTrue($response->success);
     }
 }

@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'andydefer/push-notifier',
-        'pretty_version' => 'dev-master',
-        'version' => 'dev-master',
-        'reference' => '96726912b2d70c7365045a27516db4d2acc0203a',
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => '83a13a4c1aa32174654fb23b4607653075567b4f',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -11,9 +11,9 @@
     ),
     'versions' => array(
         'andydefer/push-notifier' => array(
-            'pretty_version' => 'dev-master',
-            'version' => 'dev-master',
-            'reference' => '96726912b2d70c7365045a27516db4d2acc0203a',
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => '83a13a4c1aa32174654fb23b4607653075567b4f',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

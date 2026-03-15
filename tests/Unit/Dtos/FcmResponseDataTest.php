@@ -8,24 +8,28 @@ use Andydefer\PushNotifier\Dtos\FcmResponseData;
 use Andydefer\PushNotifier\Tests\TestCase;
 
 /**
- * Unit tests for FcmResponseData DTO.
+ * Unit tests validating FcmResponseData DTO behavior for both successful
+ * and failed Firebase Cloud Messaging API responses.
  */
 final class FcmResponseDataTest extends TestCase
 {
     /**
-     * Test that successful response can be created.
+     * Verifies that a successful FCM response is properly parsed into a DTO.
      */
     public function test_can_create_successful_response(): void
     {
-        // Arrange
+        // Arrange: Prepare a mock FCM success response
         $responseData = [
             'name' => 'projects/test-project/messages/msg-123456',
         ];
 
-        // Act
-        $response = FcmResponseData::fromFcmResponse($responseData, 200);
+        // Act: Convert raw response to DTO
+        $response = FcmResponseData::fromFcmResponse(
+            response: $responseData,
+            statusCode: 200
+        );
 
-        // Assert
+        // Assert: Verify all success properties are correctly set
         $this->assertTrue($response->success);
         $this->assertEquals('msg-123456', $response->messageId);
         $this->assertEquals('projects/test-project/messages/msg-123456', $response->name);
@@ -36,14 +40,18 @@ final class FcmResponseDataTest extends TestCase
     }
 
     /**
-     * Test that error response can be created.
+     * Verifies that error responses are properly structured with failure details.
      */
     public function test_can_create_error_response(): void
     {
-        // Act
-        $response = FcmResponseData::fromError('UNREGISTERED', 'Device token invalid', 404);
+        // Act: Create an error response DTO
+        $response = FcmResponseData::fromError(
+            errorCode: 'UNREGISTERED',
+            errorMessage: 'Device token invalid',
+            statusCode: 404
+        );
 
-        // Assert
+        // Assert: Verify error properties are correctly populated
         $this->assertFalse($response->success);
         $this->assertEquals('', $response->messageId);
         $this->assertEquals('', $response->name);
@@ -53,105 +61,150 @@ final class FcmResponseDataTest extends TestCase
     }
 
     /**
-     * Test that message ID is correctly extracted from full name.
+     * Confirms that message IDs are correctly extracted from various resource name formats.
      */
     public function test_message_id_extracted_correctly(): void
     {
-        // Arrange
-        $variations = [
+        // Arrange: Test various resource name formats
+        $resourceNameScenarios = [
             'projects/test/messages/msg-123' => 'msg-123',
             'projects/test/messages/msg-456/extra' => 'extra',
             'msg-789' => 'msg-789',
         ];
 
-        foreach ($variations as $name => $expectedId) {
-            // Act
-            $response = FcmResponseData::fromFcmResponse(['name' => $name]);
+        foreach ($resourceNameScenarios as $resourceName => $expectedMessageId) {
+            // Act: Parse each resource name variation
+            $response = FcmResponseData::fromFcmResponse(
+                response: ['name' => $resourceName]
+            );
 
-            // Assert
-            $this->assertEquals($expectedId, $response->messageId);
+            // Assert: Verify message ID extraction
+            $this->assertEquals($expectedMessageId, $response->messageId);
         }
     }
 
     /**
-     * Test that isInvalidToken detects invalid token errors.
+     * Verifies that token invalidation errors are correctly identified.
      */
     public function test_is_invalid_token_detects_token_errors(): void
     {
-        // Arrange
-        $invalidTokenErrors = ['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND'];
-        $otherErrors = ['QUOTA_EXCEEDED', 'INTERNAL', 'UNAVAILABLE'];
+        // Arrange: Categorize error codes
+        $invalidTokenErrorCodes = ['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND'];
+        $otherErrorCodes = ['QUOTA_EXCEEDED', 'INTERNAL', 'UNAVAILABLE'];
 
-        foreach ($invalidTokenErrors as $errorCode) {
-            // Act
-            $response = FcmResponseData::fromError($errorCode, 'Error');
+        // Act & Assert: Verify invalid token detection
+        foreach ($invalidTokenErrorCodes as $errorCode) {
+            $response = FcmResponseData::fromError(
+                errorCode: $errorCode,
+                errorMessage: 'Error'
+            );
 
-            // Assert
-            $this->assertTrue($response->isInvalidToken(), "Failed for error code: {$errorCode}");
+            $this->assertTrue(
+                condition: $response->isInvalidToken(),
+                message: "Failed to detect invalid token for error code: {$errorCode}"
+            );
         }
 
-        foreach ($otherErrors as $errorCode) {
-            // Act
-            $response = FcmResponseData::fromError($errorCode, 'Error');
+        // Act & Assert: Verify other errors are not flagged
+        foreach ($otherErrorCodes as $errorCode) {
+            $response = FcmResponseData::fromError(
+                errorCode: $errorCode,
+                errorMessage: 'Error'
+            );
 
-            // Assert
-            $this->assertFalse($response->isInvalidToken(), "Failed for error code: {$errorCode}");
+            $this->assertFalse(
+                condition: $response->isInvalidToken(),
+                message: "Incorrectly flagged as invalid token: {$errorCode}"
+            );
         }
     }
 
     /**
-     * Test that isQuotaExceeded detects quota errors.
+     * Verifies that quota exceeded errors are correctly identified.
      */
     public function test_is_quota_exceeded_detects_quota_errors(): void
     {
-        // Arrange
-        $quotaErrors = ['QUOTA_EXCEEDED', 'RESOURCE_EXHAUSTED', 'RATE_EXCEEDED'];
-        $otherErrors = ['UNREGISTERED', 'INTERNAL', 'UNAVAILABLE'];
+        // Arrange: Categorize error codes
+        $quotaExceededErrorCodes = ['QUOTA_EXCEEDED', 'RESOURCE_EXHAUSTED', 'RATE_EXCEEDED'];
+        $otherErrorCodes = ['UNREGISTERED', 'INTERNAL', 'UNAVAILABLE'];
 
-        foreach ($quotaErrors as $errorCode) {
-            // Act
-            $response = FcmResponseData::fromError($errorCode, 'Error');
+        // Act & Assert: Verify quota detection
+        foreach ($quotaExceededErrorCodes as $errorCode) {
+            $response = FcmResponseData::fromError(
+                errorCode: $errorCode,
+                errorMessage: 'Error'
+            );
 
-            // Assert
-            $this->assertTrue($response->isQuotaExceeded(), "Failed for error code: {$errorCode}");
+            $this->assertTrue(
+                condition: $response->isQuotaExceeded(),
+                message: "Failed to detect quota exceeded for error code: {$errorCode}"
+            );
         }
 
-        foreach ($otherErrors as $errorCode) {
-            // Act
-            $response = FcmResponseData::fromError($errorCode, 'Error');
+        // Act & Assert: Verify other errors are not flagged
+        foreach ($otherErrorCodes as $errorCode) {
+            $response = FcmResponseData::fromError(
+                errorCode: $errorCode,
+                errorMessage: 'Error'
+            );
 
-            // Assert
-            $this->assertFalse($response->isQuotaExceeded(), "Failed for error code: {$errorCode}");
+            $this->assertFalse(
+                condition: $response->isQuotaExceeded(),
+                message: "Incorrectly flagged as quota exceeded: {$errorCode}"
+            );
         }
     }
 
     /**
-     * Test that isAuthError detects authentication errors.
+     * Verifies that authentication errors are correctly identified from both
+     * error codes and HTTP status codes.
      */
     public function test_is_auth_error_detects_auth_errors(): void
     {
-        // Arrange
-        $authErrorCodes = ['UNAUTHENTICATED', 'PERMISSION_DENIED'];
-        $authStatusCodes = [401, 403];
+        // Arrange: Test cases for auth errors
+        $authErrorScenarios = [
+            'error_codes' => ['UNAUTHENTICATED', 'PERMISSION_DENIED'],
+            'auth_status_codes' => [401, 403],
+        ];
 
-        foreach ($authErrorCodes as $errorCode) {
-            // Act
-            $response = FcmResponseData::fromError($errorCode, 'Error');
+        // Act & Assert: Verify error code detection
+        foreach ($authErrorScenarios['error_codes'] as $errorCode) {
+            $response = FcmResponseData::fromError(
+                errorCode: $errorCode,
+                errorMessage: 'Error'
+            );
 
-            // Assert
-            $this->assertTrue($response->isAuthError(), "Failed for error code: {$errorCode}");
+            $this->assertTrue(
+                condition: $response->isAuthError(),
+                message: "Failed to detect auth error for error code: {$errorCode}"
+            );
         }
 
-        foreach ($authStatusCodes as $statusCode) {
-            // Act
-            $response = FcmResponseData::fromError('OTHER', 'Error', $statusCode);
+        // Act & Assert: Verify HTTP status code detection
+        foreach ($authErrorScenarios['auth_status_codes'] as $statusCode) {
+            $response = FcmResponseData::fromError(
+                errorCode: 'OTHER',
+                errorMessage: 'Error',
+                statusCode: $statusCode
+            );
 
-            // Assert
-            $this->assertTrue($response->isAuthError(), "Failed for status code: {$statusCode}");
+            $this->assertTrue(
+                condition: $response->isAuthError(),
+                message: "Failed to detect auth error for status code: {$statusCode}"
+            );
         }
 
-        // Test non-auth errors
-        $response = FcmResponseData::fromError('UNREGISTERED', 'Error', 404);
-        $this->assertFalse($response->isAuthError());
+        // Act: Test non-auth error
+        $nonAuthResponse = FcmResponseData::fromError(
+            errorCode: 'UNREGISTERED',
+            errorMessage: 'Error',
+            statusCode: 404
+        );
+
+        // Assert: Verify non-auth errors are correctly excluded
+        $this->assertFalse(
+            condition: $nonAuthResponse->isAuthError(),
+            message: "Incorrectly flagged non-auth error as auth error"
+        );
     }
 }

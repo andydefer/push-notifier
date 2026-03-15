@@ -13,16 +13,24 @@ use Andydefer\PushNotifier\Services\FirebaseAuthProvider;
 use Andydefer\PushNotifier\Services\FirebaseService;
 use Andydefer\PushNotifier\Services\FcmPayloadBuilder;
 
+/**
+ * Factory for creating configured Firebase notification services.
+ *
+ * Provides multiple convenient methods to instantiate FirebaseService
+ * from various configuration sources while maintaining consistent
+ * dependency injection across all created instances.
+ */
 class NotificationFactory
 {
     private HttpClientInterface $httpClient;
     private AuthProviderInterface $authProvider;
     private PayloadBuilderInterface $payloadBuilder;
-
     /**
-     * @param HttpClientInterface|null $httpClient Custom HTTP client
-     * @param AuthProviderInterface|null $authProvider Custom auth provider
-     * @param PayloadBuilderInterface|null $payloadBuilder Custom payload builder
+     * Initializes the factory with optional custom implementations.
+     *
+     * @param HttpClientInterface|null $httpClient Custom HTTP client for API requests
+     * @param AuthProviderInterface|null $authProvider Custom authentication provider
+     * @param PayloadBuilderInterface|null $payloadBuilder Custom FCM payload builder
      */
     public function __construct(
         ?HttpClientInterface $httpClient = null,
@@ -30,27 +38,44 @@ class NotificationFactory
         ?PayloadBuilderInterface $payloadBuilder = null
     ) {
         $this->httpClient = $httpClient ?? new GuzzleHttpClient();
-        $this->authProvider = $authProvider ?? new FirebaseAuthProvider($this->httpClient);
+
+        if ($authProvider === null) {
+            $this->authProvider = new FirebaseAuthProvider(
+                httpClient: $this->httpClient
+            );
+        } else {
+            $this->authProvider = $authProvider;
+        }
+
         $this->payloadBuilder = $payloadBuilder ?? new FcmPayloadBuilder();
     }
-
     /**
-     * Create a Firebase service instance from a service account JSON file.
-     * This is the recommended way - it preserves the private key exactly as in the file.
+     * Creates a Firebase service from a service account JSON file.
      *
-     * @param string $jsonPath Path to service account JSON file
-     * @throws \InvalidArgumentException If file not found or invalid
+     * This is the recommended approach as it preserves private key formatting
+     * exactly as stored in the file, preventing common newline issues.
+     *
+     * @param string $jsonFilePath Absolute or relative path to service account JSON
+     * @return FirebaseService Fully configured Firebase service instance
+     *
+     * @throws \InvalidArgumentException When file is missing, unreadable, or contains invalid JSON
      */
-    public function makeFirebaseServiceFromJsonFile(string $jsonPath): FirebaseService
+    public function makeFirebaseServiceFromJsonFile(string $jsonFilePath): FirebaseService
     {
-        $config = FirebaseConfigData::fromJsonFile($jsonPath);
+        $config = FirebaseConfigData::fromJsonFile($jsonFilePath);
         return $this->makeFirebaseService($config);
     }
 
     /**
-     * Create a Firebase service instance from a service account JSON string.
+     * Creates a Firebase service from a service account JSON string.
      *
-     * @param string $jsonContent Raw JSON content from service account file
+     * Useful when configuration is stored in databases, environment variables,
+     * or retrieved from external services.
+     *
+     * @param string $jsonContent Raw JSON string containing service account credentials
+     * @return FirebaseService Fully configured Firebase service instance
+     *
+     * @throws \InvalidArgumentException When JSON is malformed or missing required fields
      */
     public function makeFirebaseServiceFromJsonString(string $jsonContent): FirebaseService
     {
@@ -59,16 +84,21 @@ class NotificationFactory
     }
 
     /**
-     * Create a Firebase service instance from a config array.
-     * WARNING: Be careful with private key newlines when using this method!
-     * Prefer makeFirebaseServiceFromJsonFile() instead.
+     * Creates a Firebase service from a configuration array.
+     *
+     * ⚠️ WARNING: Be cautious with private key newline characters when using this method.
+     * The private key must contain literal newlines (\n), not escaped sequences.
+     * Prefer makeFirebaseServiceFromJsonFile() when possible.
      *
      * @param array{
      *     project_id: string,
      *     client_email: string,
      *     private_key: string,
      *     token_uri?: string
-     * } $config
+     * } $config Service account configuration array
+     * @return FirebaseService Fully configured Firebase service instance
+     *
+     * @throws \InvalidArgumentException When required fields are missing
      */
     public function makeFirebaseServiceFromArray(array $config): FirebaseService
     {
@@ -77,19 +107,30 @@ class NotificationFactory
     }
 
     /**
-     * Create a Firebase service instance from environment variables.
-     * WARNING: Be careful with private key newlines in .env files!
+     * Creates a Firebase service from environment variables.
      *
-     * @param array<string, string> $env
+     * ⚠️ WARNING: Pay special attention to private key newlines in .env files.
+     * Environment variables often strip or escape newlines incorrectly.
+     *
+     * @param array<string, string> $environmentVariables Associative array of environment variables
+     * @return FirebaseService Fully configured Firebase service instance
+     *
+     * @throws \InvalidArgumentException When required environment variables are missing
      */
-    public function makeFirebaseServiceFromEnv(array $env): FirebaseService
+    public function makeFirebaseServiceFromEnv(array $environmentVariables): FirebaseService
     {
-        $configData = FirebaseConfigData::fromEnv($env);
+        $configData = FirebaseConfigData::fromEnv($environmentVariables);
         return $this->makeFirebaseService($configData);
     }
 
     /**
-     * Create a Firebase service instance from a config object.
+     * Creates a Firebase service from a pre-configured configuration object.
+     *
+     * This is the core factory method that all other creation methods delegate to.
+     * It assembles the Firebase service with all dependencies and configuration.
+     *
+     * @param FirebaseConfigData $config Validated Firebase configuration
+     * @return FirebaseService Ready-to-use Firebase service instance
      */
     public function makeFirebaseService(FirebaseConfigData $config): FirebaseService
     {
@@ -102,7 +143,9 @@ class NotificationFactory
     }
 
     /**
-     * Get the HTTP client instance.
+     * Returns the HTTP client instance used by the factory.
+     *
+     * @return HttpClientInterface Configured HTTP client for API communication
      */
     public function getHttpClient(): HttpClientInterface
     {
@@ -110,7 +153,9 @@ class NotificationFactory
     }
 
     /**
-     * Get the auth provider instance.
+     * Returns the authentication provider instance used by the factory.
+     *
+     * @return AuthProviderInterface Authentication provider for token management
      */
     public function getAuthProvider(): AuthProviderInterface
     {
@@ -118,7 +163,9 @@ class NotificationFactory
     }
 
     /**
-     * Get the payload builder instance.
+     * Returns the payload builder instance used by the factory.
+     *
+     * @return PayloadBuilderInterface Builder for creating FCM message payloads
      */
     public function getPayloadBuilder(): PayloadBuilderInterface
     {

@@ -10,14 +10,17 @@ use Andydefer\PushNotifier\Services\FcmPayloadBuilder;
 use Andydefer\PushNotifier\Tests\TestCase;
 
 /**
- * Unit tests for FcmPayloadBuilder service.
+ * Unit tests validating FCM payload structure generation.
+ *
+ * Verifies that the payload builder correctly formats messages for
+ * different platforms (Android/iOS) and notification types.
  */
 final class FcmPayloadBuilderTest extends TestCase
 {
     private FcmPayloadBuilder $builder;
 
     /**
-     * Set up test environment.
+     * Initializes a fresh payload builder for each test.
      */
     protected function setUp(): void
     {
@@ -27,18 +30,18 @@ final class FcmPayloadBuilderTest extends TestCase
     }
 
     /**
-     * Test that basic payload is built correctly.
+     * Verifies that minimal required payload structure is always present.
      */
     public function test_builds_basic_payload(): void
     {
-        // Arrange
+        // Arrange: Create minimal notification
         $deviceToken = 'test-device-token-123';
-        $message = FcmMessageData::info('Test Title', 'Test Body');
+        $message = FcmMessageData::info(title: 'Test Title', body: 'Test Body');
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Core structure exists with correct values
         $this->assertArrayHasKey('message', $payload);
         $this->assertEquals($deviceToken, $payload['message']['token']);
         $this->assertArrayHasKey('data', $payload['message']);
@@ -47,62 +50,62 @@ final class FcmPayloadBuilderTest extends TestCase
     }
 
     /**
-     * Test that visible notifications include notification block.
+     * Ensures visible notifications include platform notification blocks.
      */
     public function test_visible_notifications_include_notification_block(): void
     {
-        // Arrange
+        // Arrange: Create visible notification
         $deviceToken = 'test-token';
-        $message = FcmMessageData::info('Visible Title', 'Visible Body');
+        $message = FcmMessageData::info(title: 'Visible Title', body: 'Visible Body');
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Notification block present with correct content
         $this->assertArrayHasKey('notification', $payload['message']);
         $this->assertEquals('Visible Title', $payload['message']['notification']['title']);
         $this->assertEquals('Visible Body', $payload['message']['notification']['body']);
     }
 
     /**
-     * Test that ping notifications don't include notification block.
+     * Confirms silent notifications (ping) omit visual notification blocks.
      */
     public function test_ping_notifications_dont_include_notification_block(): void
     {
-        // Arrange
+        // Arrange: Create silent ping notification
         $deviceToken = 'test-token';
         $message = FcmMessageData::ping();
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: No notification block for silent messages
         $this->assertArrayNotHasKey('notification', $payload['message']);
     }
 
     /**
-     * Test that Android configuration is added correctly.
+     * Verifies Android-specific configuration is properly structured.
      */
     public function test_android_configuration_is_added(): void
     {
-        // Arrange
+        // Arrange: Create notification requiring Android config
         $deviceToken = 'test-token';
-        $message = FcmMessageData::alert('Alert', 'Body');
+        $message = FcmMessageData::alert(title: 'Alert', body: 'Body');
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Android block exists with correct priority
         $this->assertArrayHasKey('android', $payload['message']);
         $this->assertEquals('high', $payload['message']['android']['priority']);
     }
 
     /**
-     * Test that Android channel ID is added when provided.
+     * Ensures Android channel ID is properly propagated.
      */
     public function test_android_channel_id_is_added_when_provided(): void
     {
-        // Arrange
+        // Arrange: Create message with specific Android channel
         $deviceToken = 'test-token';
         $message = new FcmMessageData(
             type: NotificationType::INFO,
@@ -111,27 +114,27 @@ final class FcmPayloadBuilderTest extends TestCase
             channelId: 'test-channel'
         );
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Channel ID appears in Android notification config
         $this->assertArrayHasKey('notification', $payload['message']['android']);
         $this->assertEquals('test-channel', $payload['message']['android']['notification']['channel_id']);
     }
 
     /**
-     * Test that APNs configuration is added correctly.
+     * Validates iOS (APNs) configuration structure.
      */
     public function test_apns_configuration_is_added(): void
     {
-        // Arrange
+        // Arrange: Create notification requiring iOS delivery
         $deviceToken = 'test-token';
-        $message = FcmMessageData::alert('Alert', 'Body');
+        $message = FcmMessageData::alert(title: 'Alert', body: 'Body');
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: APNs block structure is complete
         $this->assertArrayHasKey('apns', $payload['message']);
         $this->assertArrayHasKey('payload', $payload['message']['apns']);
         $this->assertArrayHasKey('aps', $payload['message']['apns']['payload']);
@@ -139,35 +142,35 @@ final class FcmPayloadBuilderTest extends TestCase
     }
 
     /**
-     * Test that APNs priority is set correctly based on message priority.
+     * Confirms iOS priority mapping based on notification type.
      */
     public function test_apns_priority_is_set_correctly(): void
     {
-        // Arrange
+        // Arrange: Prepare device token
         $deviceToken = 'test-token';
 
-        // Act
+        // Act: Generate payloads for different priority levels
         $highPriorityPayload = $this->builder->build(
-            $deviceToken,
-            FcmMessageData::alert('High', 'Priority')
+            deviceToken: $deviceToken,
+            message: FcmMessageData::alert(title: 'High', body: 'Priority')
         );
 
         $normalPriorityPayload = $this->builder->build(
-            $deviceToken,
-            FcmMessageData::info('Normal', 'Priority')
+            deviceToken: $deviceToken,
+            message: FcmMessageData::info(title: 'Normal', body: 'Priority')
         );
 
-        // Assert
+        // Assert: APNs priority reflects message importance
         $this->assertEquals('10', $highPriorityPayload['message']['apns']['headers']['apns-priority']);
         $this->assertEquals('5', $normalPriorityPayload['message']['apns']['headers']['apns-priority']);
     }
 
     /**
-     * Test that iOS badge is added when provided.
+     * Verifies iOS badge number is properly set.
      */
     public function test_ios_badge_is_added_when_provided(): void
     {
-        // Arrange
+        // Arrange: Create message with badge count
         $deviceToken = 'test-token';
         $message = new FcmMessageData(
             type: NotificationType::INFO,
@@ -176,19 +179,19 @@ final class FcmPayloadBuilderTest extends TestCase
             badge: 5
         );
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Badge appears in APNs payload
         $this->assertEquals(5, $payload['message']['apns']['payload']['aps']['badge']);
     }
 
     /**
-     * Test that iOS sound is added when provided.
+     * Ensures custom iOS sound is properly configured.
      */
     public function test_ios_sound_is_added_when_provided(): void
     {
-        // Arrange
+        // Arrange: Create message with custom sound
         $deviceToken = 'test-token';
         $message = new FcmMessageData(
             type: NotificationType::INFO,
@@ -197,25 +200,25 @@ final class FcmPayloadBuilderTest extends TestCase
             sound: 'custom.wav'
         );
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Custom sound appears in APNs configuration
         $this->assertEquals('custom.wav', $payload['message']['apns']['payload']['aps']['sound']);
     }
 
     /**
-     * Test that content-available flag is set correctly.
+     * Validates content-available flag for background updates.
      */
     public function test_content_available_flag_is_set_correctly(): void
     {
-        // Arrange
+        // Arrange: Prepare device token
         $deviceToken = 'test-token';
 
-        // Act
+        // Act: Generate payloads with and without content-available
         $withContentAvailable = $this->builder->build(
-            $deviceToken,
-            new FcmMessageData(
+            deviceToken: $deviceToken,
+            message: new FcmMessageData(
                 type: NotificationType::INFO,
                 title: 'Title',
                 body: 'Body',
@@ -224,8 +227,8 @@ final class FcmPayloadBuilderTest extends TestCase
         );
 
         $withoutContentAvailable = $this->builder->build(
-            $deviceToken,
-            new FcmMessageData(
+            deviceToken: $deviceToken,
+            message: new FcmMessageData(
                 type: NotificationType::INFO,
                 title: 'Title',
                 body: 'Body',
@@ -233,17 +236,17 @@ final class FcmPayloadBuilderTest extends TestCase
             )
         );
 
-        // Assert
+        // Assert: Flag correctly toggles between 1 and 0
         $this->assertEquals(1, $withContentAvailable['message']['apns']['payload']['aps']['content-available']);
         $this->assertEquals(0, $withoutContentAvailable['message']['apns']['payload']['aps']['content-available']);
     }
 
     /**
-     * Test that TTL is added when provided.
+     * Confirms TTL (Time To Live) is properly formatted.
      */
     public function test_ttl_is_added_when_provided(): void
     {
-        // Arrange
+        // Arrange: Create message with TTL
         $deviceToken = 'test-token';
         $message = new FcmMessageData(
             type: NotificationType::INFO,
@@ -252,19 +255,19 @@ final class FcmPayloadBuilderTest extends TestCase
             ttl: 3600
         );
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: TTL appears with proper unit suffix
         $this->assertEquals('3600s', $payload['message']['android']['ttl']);
     }
 
     /**
-     * Test that image URL is added to notification when provided.
+     * Verifies image URL is included in both notification and data payloads.
      */
     public function test_image_url_is_added_to_notification_when_provided(): void
     {
-        // Arrange
+        // Arrange: Create message with image
         $deviceToken = 'test-token';
         $message = new FcmMessageData(
             type: NotificationType::INFO,
@@ -273,20 +276,20 @@ final class FcmPayloadBuilderTest extends TestCase
             imageUrl: 'https://example.com/image.jpg'
         );
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Image appears in both visible and data sections
         $this->assertEquals('https://example.com/image.jpg', $payload['message']['notification']['image']);
         $this->assertEquals('https://example.com/image.jpg', $payload['message']['data']['image_url']);
     }
 
     /**
-     * Test that click action is added when provided.
+     * Ensures click action is available in both notification and data.
      */
     public function test_click_action_is_added_when_provided(): void
     {
-        // Arrange
+        // Arrange: Create message with click action
         $deviceToken = 'test-token';
         $message = new FcmMessageData(
             type: NotificationType::INFO,
@@ -295,10 +298,10 @@ final class FcmPayloadBuilderTest extends TestCase
             clickAction: 'OPEN_ACTIVITY'
         );
 
-        // Act
-        $payload = $this->builder->build($deviceToken, $message);
+        // Act: Generate payload
+        $payload = $this->builder->build(deviceToken: $deviceToken, message: $message);
 
-        // Assert
+        // Assert: Click action duplicated for maximum compatibility
         $this->assertEquals('OPEN_ACTIVITY', $payload['message']['notification']['click_action']);
         $this->assertEquals('OPEN_ACTIVITY', $payload['message']['data']['click_action']);
     }

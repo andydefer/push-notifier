@@ -11,15 +11,29 @@ use Andydefer\PushNotifier\Exceptions\FirebaseAuthException;
 use Carbon\CarbonImmutable;
 use RuntimeException;
 
+/**
+ * Google OAuth2 authentication provider for Firebase Cloud Messaging.
+ *
+ * Implements service account authentication flow using JWT assertions
+ * to obtain and cache access tokens for Firebase Cloud Messaging API.
+ * Automatically handles token refresh and project switching.
+ */
 class FirebaseAuthProvider implements AuthProviderInterface
 {
+    /**
+     * OAuth2 scopes required for Firebase Cloud Messaging.
+     */
     private const SCOPES = ['https://www.googleapis.com/auth/firebase.messaging'];
-    private const TOKEN_LIFETIME = 3600; // 1 hour
+
+    /**
+     * Token lifetime in seconds (1 hour).
+     */
+    private const TOKEN_LIFETIME = 3600;
 
     private HttpClientInterface $httpClient;
     private ?string $cachedToken = null;
-    private ?int $tokenExpiry = null;
-    private ?string $lastProjectId = null;
+    private ?int $cachedTokenExpiry = null;
+    private ?string $cachedProjectId = null;
 
     public function __construct(HttpClientInterface $httpClient)
     {
@@ -32,26 +46,14 @@ class FirebaseAuthProvider implements AuthProviderInterface
     public function getAccessToken(FirebaseConfigData $config): string
     {
         try {
-            // Clear cache if project changed
-            if ($this->lastProjectId !== null && $this->lastProjectId !== $config->projectId) {
-                $this->clearCache();
-            }
+            $this->invalidateCacheIfProjectChanged($config);
 
-            // Return cached token if still valid
-            if ($this->cachedToken !== null && $this->tokenExpiry !== null && time() < $this->tokenExpiry) {
+            if ($this->hasValidCachedToken()) {
                 return $this->cachedToken;
             }
 
-            $jwt = $this->generateJwt($config);
-            $tokenData = $this->exchangeJwtForToken($config, $jwt);
-
-            $this->cachedToken = $tokenData['access_token'];
-            $this->tokenExpiry = time() + ($tokenData['expires_in'] ?? self::TOKEN_LIFETIME);
-            $this->lastProjectId = $config->projectId;
-
-            return $this->cachedToken;
+            return $this->requestNewAccessToken($config);
         } catch (RuntimeException $exception) {
-            // Catch and transform any HTTP client errors
             throw new FirebaseAuthException(
                 "Failed to obtain access token: HTTP 0 - " . $exception->getMessage(),
                 $exception
@@ -73,80 +75,101 @@ class FirebaseAuthProvider implements AuthProviderInterface
     public function clearCache(): void
     {
         $this->cachedToken = null;
-        $this->tokenExpiry = null;
+        $this->cachedTokenExpiry = null;
+        $this->cachedProjectId = null;
     }
 
     /**
-     * Generate JWT for service account authentication.
+     * Generates a JWT assertion for service account authentication.
      *
-     * @throws FirebaseAuthException
+     * Creates a signed JWT containing the required claims for OAuth2
+     * token exchange using the service account's private key.
+     *
+     * @param FirebaseConfigData $config Service account credentials
+     * @return string Signed JWT assertion
+     *
+     * @throws FirebaseAuthException When JWT signing fails
      */
-    public function generateJwt(FirebaseConfigData $config): string
+    private function generateJwtAssertion(FirebaseConfigData $config): string
     {
-        $header = $this->base64UrlEncode(json_encode([
+        $encodedHeader = $this->base64UrlEncode(json_encode([
             'alg' => 'RS256',
             'typ' => 'JWT',
         ]));
 
-        $now = CarbonImmutable::now()->getTimestamp();
+        $currentTimestamp = CarbonImmutable::now()->getTimestamp();
 
-        $claims = $this->base64UrlEncode(json_encode([
+        $encodedClaims = $this->base64UrlEncode(json_encode([
             'iss' => $config->clientEmail,
             'scope' => implode(' ', self::SCOPES),
             'aud' => $config->tokenUri,
-            'iat' => $now,
-            'exp' => $now + self::TOKEN_LIFETIME,
+            'iat' => $currentTimestamp,
+            'exp' => $currentTimestamp + self::TOKEN_LIFETIME,
         ]));
 
-        $signature = '';
-        $success = openssl_sign(
-            $header . '.' . $claims,
-            $signature,
-            $config->privateKey,
-            'SHA256'
+        $signature = $this->signJwtPayload(
+            payload: $encodedHeader . '.' . $encodedClaims,
+            privateKey: $config->privateKey
         );
 
-        if (!$success) {
-            $error = openssl_error_string();
-            throw new FirebaseAuthException(
-                "Failed to sign JWT with private key: " . ($error ?: 'Unknown error')
-            );
-        }
-
-        return $header . '.' . $claims . '.' . $this->base64UrlEncode($signature);
+        return $encodedHeader . '.' . $encodedClaims . '.' . $this->base64UrlEncode($signature);
     }
 
     /**
-     * Exchange JWT for OAuth2 access token.
+     * Signs a JWT payload using the provided private key.
      *
-     * @throws FirebaseAuthException
+     * @param string $payload The encoded header and claims
+     * @param string $privateKey RSA private key for signing
+     * @return string Raw signature
+     *
+     * @throws FirebaseAuthException When signing fails
      */
-    private function exchangeJwtForToken(FirebaseConfigData $config, string $jwt): array
+    private function signJwtPayload(string $payload, string $privateKey): string
+    {
+        $signature = '';
+        $signingSuccessful = openssl_sign(
+            data: $payload,
+            signature: $signature,
+            private_key: $privateKey,
+            algorithm: 'SHA256'
+        );
+
+        if (!$signingSuccessful) {
+            $errorMessage = openssl_error_string() ?: 'Unknown OpenSSL error';
+            throw new FirebaseAuthException(
+                "Failed to sign JWT with private key: {$errorMessage}"
+            );
+        }
+
+        return $signature;
+    }
+
+    /**
+     * Exchanges a JWT assertion for an OAuth2 access token.
+     *
+     * @param FirebaseConfigData $config Service account configuration
+     * @param string $jwtAssertion Signed JWT assertion
+     * @return array OAuth2 token response data
+     *
+     * @throws FirebaseAuthException When token exchange fails
+     */
+    private function exchangeJwtForAccessToken(FirebaseConfigData $config, string $jwtAssertion): array
     {
         try {
-            $response = $this->httpClient->post($config->tokenUri, [
-                'form_params' => [
-                    'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                    'assertion' => $jwt,
-                ],
-            ]);
+            $response = $this->httpClient->post(
+                url: $config->tokenUri,
+                options: [
+                    'form_params' => [
+                        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                        'assertion' => $jwtAssertion,
+                    ],
+                ]
+            );
 
-            if (!$response->isSuccessful() || $response->data === null) {
-                $error = $response->data['error'] ?? 'Unknown error';
-                $description = $response->data['error_description'] ?? '';
-
-                throw new FirebaseAuthException(
-                    "Failed to obtain access token: HTTP {$response->statusCode} - {$error} {$description}"
-                );
-            }
-
-            if (!isset($response->data['access_token'])) {
-                throw new FirebaseAuthException('OAuth response missing access_token');
-            }
+            $this->validateTokenResponse($response);
 
             return $response->data;
         } catch (RuntimeException $exception) {
-            // Catch and transform HTTP client errors during token exchange
             throw new FirebaseAuthException(
                 "Failed to obtain access token: HTTP 0 - " . $exception->getMessage(),
                 $exception
@@ -155,10 +178,90 @@ class FirebaseAuthProvider implements AuthProviderInterface
     }
 
     /**
-     * Base64URL encode a string.
+     * Validates the OAuth2 token response.
+     *
+     * @param object $response HTTP client response object
+     *
+     * @throws FirebaseAuthException When response is invalid
+     */
+    private function validateTokenResponse(object $response): void
+    {
+        if (!$response->isSuccessful() || $response->data === null) {
+            $error = $response->data['error'] ?? 'Unknown error';
+            $description = $response->data['error_description'] ?? '';
+
+            throw new FirebaseAuthException(
+                "Failed to obtain access token: HTTP {$response->statusCode} - {$error} {$description}"
+            );
+        }
+
+        if (!isset($response->data['access_token'])) {
+            throw new FirebaseAuthException('OAuth response missing access_token');
+        }
+    }
+
+    /**
+     * Invalidates the cache if the Firebase project has changed.
+     *
+     * @param FirebaseConfigData $config Current Firebase configuration
+     */
+    private function invalidateCacheIfProjectChanged(FirebaseConfigData $config): void
+    {
+        if ($this->cachedProjectId !== null && $this->cachedProjectId !== $config->projectId) {
+            $this->clearCache();
+        }
+    }
+
+    /**
+     * Checks if there's a valid cached token available.
+     *
+     * @return bool True if a valid token exists in cache
+     */
+    private function hasValidCachedToken(): bool
+    {
+        return $this->cachedToken !== null
+            && $this->cachedTokenExpiry !== null
+            && time() < $this->cachedTokenExpiry;
+    }
+
+    /**
+     * Requests and caches a new access token from Google OAuth2 server.
+     *
+     * @param FirebaseConfigData $config Firebase configuration
+     * @return string New access token
+     *
+     * @throws FirebaseAuthException When token acquisition fails
+     */
+    private function requestNewAccessToken(FirebaseConfigData $config): string
+    {
+        $jwtAssertion = $this->generateJwtAssertion($config);
+        $tokenResponse = $this->exchangeJwtForAccessToken($config, $jwtAssertion);
+
+        $this->cachedToken = $tokenResponse['access_token'];
+        $this->cachedTokenExpiry = time() + ($tokenResponse['expires_in'] ?? self::TOKEN_LIFETIME);
+        $this->cachedProjectId = $config->projectId;
+
+        return $this->cachedToken;
+    }
+
+    /**
+     * Encodes data to Base64URL format.
+     *
+     * Base64URL is a URL-safe variant of Base64 where '+' and '/' are replaced
+     * with '-' and '_' respectively, and padding '=' characters are removed.
+     *
+     * @param string $data Raw data to encode
+     * @return string Base64URL encoded string
      */
     private function base64UrlEncode(string $data): string
     {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+        return rtrim(
+            string: strtr(
+                string: base64_encode($data),
+                from: '+/',
+                to: '-_'
+            ),
+            characters: '='
+        );
     }
 }

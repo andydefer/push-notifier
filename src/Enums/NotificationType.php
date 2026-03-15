@@ -5,42 +5,49 @@ declare(strict_types=1);
 namespace Andydefer\PushNotifier\Enums;
 
 /**
- * Defines the types of push notifications that can be sent.
+ * Defines the available notification categories for push messages.
+ *
+ * Each type carries specific semantic meaning that influences:
+ * - How the notification is displayed to recipients
+ * - Delivery priority through FCM
+ * - Visibility behavior on client devices
  */
 enum NotificationType: string
 {
     /**
-     * Simple informational message
+     * General informational message
      */
     case INFO = 'info';
 
     /**
-     * Alert notification for important updates
+     * Important update requiring user attention
      */
     case ALERT = 'alert';
 
     /**
-     * Warning notification for potential issues
+     * Potential issue that may need attention
      */
     case WARNING = 'warning';
 
     /**
-     * Success notification for completed operations
+     * Operation completed successfully
      */
     case SUCCESS = 'success';
 
     /**
-     * Error notification for failures
+     * Operation failed or encountered an error
      */
     case ERROR = 'error';
 
     /**
-     * Connectivity ping to check device reachability
+     * Silent connectivity check for device reachability
      */
     case PING = 'ping';
 
     /**
-     * Get a human-readable label for the notification type.
+     * Returns a human-readable display name for the notification type.
+     *
+     * Used for UI components, logging, and user-facing messages.
      */
     public function label(): string
     {
@@ -55,9 +62,12 @@ enum NotificationType: string
     }
 
     /**
-     * Get the default priority for this notification type.
+     * Determines the Firebase Cloud Messaging priority for this type.
+     *
+     * - 'high' priority: Time-sensitive notifications that should wake devices
+     * - 'normal' priority: Standard notifications that can be batched
      */
-    public function priority(): string
+    public function fcmPriority(): string
     {
         return match ($this) {
             self::INFO, self::SUCCESS, self::PING => 'normal',
@@ -66,9 +76,12 @@ enum NotificationType: string
     }
 
     /**
-     * Check if this notification type should be visible to the user.
+     * Indicates whether this notification should be displayed to the user.
+     *
+     * Silent types (like PING) are used for background operations and
+     * should not trigger visible notifications on the device.
      */
-    public function isVisible(): bool
+    public function shouldDisplayToUser(): bool
     {
         return match ($this) {
             self::PING => false,
@@ -77,9 +90,11 @@ enum NotificationType: string
     }
 
     /**
-     * Get all available values as an array.
+     * Returns all available notification type values as strings.
      *
-     * @return array<string>
+     * Useful for validation, form inputs, and API documentation.
+     *
+     * @return array<string> List of all possible notification type values
      */
     public static function values(): array
     {

@@ -6,13 +6,20 @@ namespace Andydefer\PushNotifier\Http;
 
 use Spatie\LaravelData\Data;
 
+/**
+ * Immutable data transfer object representing an HTTP response.
+ *
+ * Encapsulates all response components including status code, headers,
+ * parsed data, and raw body. Provides convenience methods for inspecting
+ * response characteristics and accessing header information.
+ */
 class HttpResponseData extends Data
 {
     /**
-     * @param int $statusCode HTTP status code
-     * @param array<string, array<string>> $headers Response headers
-     * @param array<string, mixed>|null $data Parsed response data
-     * @param string|null $rawBody Raw response body
+     * @param int $statusCode HTTP status code indicating request outcome
+     * @param array<string, array<string>> $headers Response headers with lowercase keys
+     * @param array<string, mixed>|null $data Decoded response payload
+     * @param string|null $rawBody Original unprocessed response body
      */
     public function __construct(
         public readonly int $statusCode,
@@ -22,7 +29,7 @@ class HttpResponseData extends Data
     ) {}
 
     /**
-     * Check if the request was successful (2xx status code).
+     * Determines if the response indicates a successful operation (2xx status).
      */
     public function isSuccessful(): bool
     {
@@ -30,7 +37,7 @@ class HttpResponseData extends Data
     }
 
     /**
-     * Check if the request was a client error (4xx status code).
+     * Determines if the response indicates a client-side error (4xx status).
      */
     public function isClientError(): bool
     {
@@ -38,7 +45,7 @@ class HttpResponseData extends Data
     }
 
     /**
-     * Check if the request was a server error (5xx status code).
+     * Determines if the response indicates a server-side error (5xx status).
      */
     public function isServerError(): bool
     {
@@ -46,27 +53,28 @@ class HttpResponseData extends Data
     }
 
     /**
-     * Get a specific header value.
+     * Retrieves the first value of a specific response header.
+     *
+     * @param string $name Case-insensitive header name
+     * @return string|null Header value or null if header doesn't exist
      */
     public function getHeader(string $name): ?string
     {
-        $lowerName = strtolower($name);
-        $values = $this->headers[$lowerName] ?? null;
+        $headers = $this->getHeaderLines($name);
 
-        if ($values === null || $values === []) {
-            return null;
-        }
-
-        return $values[0];
+        return $headers[0] ?? null;
     }
 
     /**
-     * Get all headers with the given name.
+     * Retrieves all values for a specific response header.
      *
-     * @return array<string>
+     * @param string $name Case-insensitive header name
+     * @return array<string> List of header values, empty array if header doesn't exist
      */
     public function getHeaderLines(string $name): array
     {
-        return $this->headers[strtolower($name)] ?? [];
+        $normalizedName = strtolower($name);
+
+        return $this->headers[$normalizedName] ?? [];
     }
 }

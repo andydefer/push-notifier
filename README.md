@@ -1,30 +1,14 @@
 # PushNotifier
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.3%2B-blue)
-![Laravel Version](https://img.shields.io/badge/Laravel-11%2F12-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**PushNotifier** est un package Laravel puissant et flexible pour l'envoi de notifications push via **Firebase Cloud Messaging (FCM)**. Construit avec une architecture robuste et orientée contrat, il simplifie l'authentification, la construction de payloads et la gestion des réponses, vous permettant d'intégrer des notifications riches et fiables en quelques minutes.
+**PushNotifier** est un package PHP puissant et flexible (compatible avec tout framework ou application brute) pour l'envoi de notifications push via **Firebase Cloud Messaging (FCM) v1**. Construit avec une architecture robuste et orientée contrat (interfaces), il simplifie l'authentification, la construction de payloads et la gestion des réponses, vous permettant d'intégrer des notifications riches et fiables en quelques minutes.
 
 ## 📦 Installation
 
 ```bash
 composer require andydefer/push-notifier
-```
-
-Le package utilise la découverte automatique de Laravel. Si vous utilisez une version plus ancienne de Laravel, ajoutez manuellement le `ServiceProvider` dans votre `config/app.php` :
-
-```php
-'providers' => [
-    // ...
-    Andydefer\PushNotifier\PushNotifierServiceProvider::class,
-],
-```
-
-Vous pouvez également publier le fichier de configuration (optionnel) :
-
-```bash
-php artisan vendor:publish --tag=pushnotifier-config
 ```
 
 ## 🚀 Démarrage Rapide
@@ -42,6 +26,8 @@ php artisan vendor:publish --tag=pushnotifier-config
 ```php
 <?php
 
+require 'vendor/autoload.php';
+
 use Andydefer\PushNotifier\Core\NotificationFactory;
 
 // 1. Créer une factory
@@ -49,7 +35,7 @@ $factory = new NotificationFactory();
 
 // 2. Créer un service Firebase à partir du fichier JSON
 $firebaseService = $factory->makeFirebaseServiceFromJsonFile(
-    storage_path('app/firebase-credentials.json')
+    __DIR__ . '/storage/firebase-credentials.json'
 );
 
 // 3. Envoyer une notification simple
@@ -70,7 +56,7 @@ if ($response->success) {
 
 ## 🔗 Architecture et Concepts Clés
 
-Le package est construit autour de plusieurs concepts puissants pour garantir flexibilité, testabilité et fiabilité.
+Le package est construit autour de plusieurs concepts puissants pour garantir flexibilité, testabilité et fiabilité dans n'importe quel environnement PHP.
 
 ### 1. La Factory comme Point d'Entrée Unique
 
@@ -88,11 +74,11 @@ $service = $factory->makeFirebaseServiceFromEnv($_ENV);
 
 ### 2. Contrats pour la Flexibilité (Interfaces)
 
-Le package est défini par des **contrats (interfaces)**. Cela vous permet de remplacer n'importe quel composant interne par votre propre logique sans modifier le cœur du package.
+Le package est défini par des **contrats (interfaces)**. Cela vous permet de remplacer n'importe quel composant interne par votre propre logique sans modifier le cœur du package, que vous soyez dans Laravel, Symfony ou un projet vanilla.
 
-*   `HttpClientInterface`: Pour utiliser un client HTTP différent (par exemple, si vous n'utilisez pas Guzzle).
-*   `AuthProviderInterface`: Pour gérer l'authentification Firebase d'une manière différente.
-*   `PayloadBuilderInterface`: Pour construire le payload FCM selon vos propres besoins.
+*   `HttpClientInterface`: Pour utiliser un client HTTP différent (par exemple, si vous préférez Symfony HttpClient au lieu de Guzzle).
+*   `AuthProviderInterface`: Pour gérer l'authentification Firebase d'une manière différente (par exemple, en utilisant une clé API au lieu d'un JWT).
+*   `PayloadBuilderInterface`: Pour construire le payload FCM selon vos propres besoins spécifiques.
 
 ```php
 // Exemple : Utiliser un client HTTP personnalisé
@@ -224,45 +210,7 @@ try {
         // Gérer le dépassement de quota (mettre en file d'attente, réessayer plus tard)
     } elseif ($errorResponse->isAuthError()) {
         // Problème d'authentification, peut-être que les identifiants ont expiré/changé
-        Log::error('Problème d\'authentification Firebase', ['error' => $errorResponse]);
-    }
-}
-```
-
-### Gérer les tokens invalides et le nettoyage
-
-Voici un exemple d'utilisation typique dans un contexte Laravel pour nettoyer les tokens expirés.
-
-```php
-use Andydefer\PushNotifier\Exceptions\FcmSendException;
-
-class NotificationController extends Controller
-{
-    public function send(User $user)
-    {
-        $firebaseService = app(NotificationFactory::class)
-            ->makeFirebaseServiceFromJsonFile(storage_path('firebase.json'));
-
-        $token = $user->fcm_token;
-
-        if (!$token) {
-            return;
-        }
-
-        try {
-            $response = $firebaseService->sendInfo($token, 'Titre', 'Corps');
-            // Log du succès
-        } catch (FcmSendException $e) {
-            // Si l'erreur indique un token invalide, on le supprime de la base de données
-            if ($e->getErrorCode() === 'UNREGISTERED') {
-                $user->fcm_token = null;
-                $user->save();
-                Log::info("Token FCM invalide supprimé pour l'utilisateur {$user->id}");
-            } else {
-                // Gérer les autres types d'erreurs
-                Log::error("Erreur FCM pour l'utilisateur {$user->id}: " . $e->getMessage());
-            }
-        }
+        error_log('Problème d\'authentification Firebase');
     }
 }
 ```
@@ -298,7 +246,7 @@ Plusieurs façons de configurer le service, par ordre de préférence :
 
 4.  **Via les variables d'environnement** :
     ```php
-    // Dans votre fichier .env :
+    // Dans votre configuration d'environnement
     // FIREBASE_PROJECT_ID=...
     // FIREBASE_CLIENT_EMAIL=...
     // FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMII...\n-----END PRIVATE KEY-----\n"
@@ -349,21 +297,18 @@ try {
     $response = $firebaseService->send($token, $message);
 } catch (FcmSendException $e) {
     // Erreur lors de l'envoi (mauvaise requête, token invalide, quota...)
-    report($e); // Envoyer à Laravel Log / Sentry
-    return back()->withErrors(['fcm' => "Erreur d'envoi: " . $e->getMessage()]);
+    error_log("Erreur d'envoi FCM: " . $e->getMessage());
+    // Notifier l'utilisateur ou réessayer plus tard
 } catch (FirebaseAuthException $e) {
     // Erreur d'authentification (mauvaise clé, projet inexistant...)
-    report($e);
+    error_log("Erreur d'authentification Firebase: " . $e->getMessage());
     // Alerter l'administrateur
-    return back()->withErrors(['fcm' => "Erreur de configuration Firebase."]);
 } catch (InvalidConfigurationException $e) {
     // Erreur dans la configuration fournie
-    report($e);
-    return back()->withErrors(['fcm' => "Configuration Firebase invalide."]);
+    error_log("Configuration Firebase invalide: " . $e->getMessage());
 } catch (\Exception $e) {
     // Autres erreurs (timeout, réseau...)
-    report($e);
-    return back()->withErrors(['fcm' => "Erreur réseau inattendue."]);
+    error_log("Erreur inattendue: " . $e->getMessage());
 }
 ```
 
@@ -402,10 +347,10 @@ try {
 | Méthode Statique | Description |
 | :--- | :--- |
 | `info(string $title, string $body, array $data = []): self` | Crée un message d'information. |
-| `alert(...)` | Crée un message d'alerte (priorité haute). |
-| `warning(...)` | Crée un message d'avertissement (priorité haute). |
-| `success(...)` | Crée un message de succès. |
-| `error(...)` | Crée un message d'erreur (priorité haute). |
+| `alert(string $title, string $body, array $data = []): self` | Crée un message d'alerte (priorité haute). |
+| `warning(string $title, string $body, array $data = []): self` | Crée un message d'avertissement (priorité haute). |
+| `success(string $title, string $body, array $data = []): self` | Crée un message de succès. |
+| `error(string $title, string $body, array $data = []): self` | Crée un message d'erreur (priorité haute). |
 | `ping(string $title = 'Connectivity Check', string $body = ''): self` | Crée un message de ping silencieux. |
 
 ### `FcmResponseData`
@@ -418,53 +363,26 @@ try {
 | `isQuotaExceeded(): bool` | Vérifie si le quota est dépassé. |
 | `isAuthError(): bool` | Vérifie s'il s'agit d'une erreur d'authentification. |
 
-## 🔧 Configuration
+## 🤝 Contribution
 
-### Fichier de configuration `config/pushnotifier.php`
+Les contributions sont les bienvenues !
 
-```php
-<?php
+1.  **Forkez** le projet
+2.  **Créez une branche** (`git checkout -b feature/ma-super-fonctionnalite`)
+3.  **Commitez vos changements** (`git commit -m 'Ajoute une fonctionnalité géniale'`)
+4.  **Poussez vers la branche** (`git push origin feature/ma-super-fonctionnalite`)
+5.  **Ouvrez une Pull Request**
 
-return [
-    /*
-    |--------------------------------------------------------------------------
-    | Configuration par défaut de Firebase
-    |--------------------------------------------------------------------------
-    |
-    | Vous pouvez pré-configurer votre projet ici, mais il est souvent plus sûr
-    | de passer la configuration directement via la Factory.
-    |
-    */
-    'firebase' => [
-        'project_id' => env('FIREBASE_PROJECT_ID'),
-        'client_email' => env('FIREBASE_CLIENT_EMAIL'),
-        'private_key' => env('FIREBASE_PRIVATE_KEY'),
-        'token_uri' => env('FIREBASE_TOKEN_URI', 'https://oauth2.googleapis.com/token'),
-    ],
+Avant de soumettre, assurez-vous de :
 
-    /*
-    |--------------------------------------------------------------------------
-    | Client HTTP par défaut
-    |--------------------------------------------------------------------------
-    |
-    | Configuration passée au client Guzzle par défaut.
-    |
-    */
-    'http' => [
-        'timeout' => env('PUSH_NOTIFIER_TIMEOUT', 30),
-        'connect_timeout' => env('PUSH_NOTIFIER_CONNECT_TIMEOUT', 5),
-    ],
-];
-```
+*   Passer tous les tests : `composer test`
+*   Respecter le style de code (PSR-12).
+*   Ajouter des tests pour toute nouvelle fonctionnalité.
 
-### Variables d'environnement (`.env`)
+## 📄 Licence
 
-```env
-# Configuration Firebase (optionnelle si vous passez un fichier JSON)
-FIREBASE_PROJECT_ID=votre-projet-id
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@votre-projet.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQIBA...\n-----END PRIVATE KEY-----\n"
+Ce package est open-source et disponible sous la licence [MIT](LICENSE).
 
-# Timeouts HTTP
-PUSH_NOTIFIER_TIMEOUT=30
-PUSH_NOTIFIER_CONNECT_TIMEOUT=5
+---
+
+**PushNotifier** - Envoyez des notifications push riches et fiables avec PHP et Firebase, simplement, dans n'importe quel projet. 🚀📱

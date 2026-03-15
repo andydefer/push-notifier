@@ -7,20 +7,29 @@ namespace Andydefer\PushNotifier\Dtos;
 use Spatie\LaravelData\Data;
 use Andydefer\PushNotifier\Enums\NotificationType;
 
+/**
+ * Data transfer object for Firebase Cloud Messaging notifications.
+ *
+ * This DTO encapsulates all parameters required to send a push notification
+ * through FCM, including platform-specific configurations for iOS and Android,
+ * as well as notification visibility and priority settings.
+ */
 class FcmMessageData extends Data
 {
     /**
-     * @param NotificationType $type Type of notification
-     * @param string $title Notification title
-     * @param string $body Notification body content
-     * @param array<string, mixed> $data Additional custom data payload
-     * @param string|null $imageUrl Optional image URL for rich notifications
-     * @param string|null $clickAction Optional action when notification is clicked
-     * @param string|null $channelId Android notification channel ID
-     * @param int|null $badge iOS badge number
-     * @param string|null $sound Custom notification sound
-     * @param bool $contentAvailable iOS content-available flag for background notifications
-     * @param int $ttl Time to live in seconds (0 = default)
+     * Creates a new FCM message instance.
+     *
+     * @param NotificationType $type Categorizes the notification (info, alert, error, etc.)
+     * @param string $title Brief notification headline displayed to users
+     * @param string $body Detailed message content shown in notification
+     * @param array<string, mixed> $data Custom key-value payload for app processing
+     * @param string|null $imageUrl Optional URL for rich media notifications
+     * @param string|null $clickAction Optional deep link or action when notification tapped
+     * @param string|null $channelId Android-specific notification channel configuration
+     * @param int|null $badge iOS badge number to display on app icon
+     * @param string|null $sound Custom notification sound name (platform-specific)
+     * @param bool $contentAvailable iOS flag enabling background processing
+     * @param int $ttl Message lifespan in seconds (0 uses FCM default)
      */
     public function __construct(
         public readonly NotificationType $type,
@@ -37,7 +46,7 @@ class FcmMessageData extends Data
     ) {}
 
     /**
-     * Create a simple info notification.
+     * Creates an informational notification with default visibility.
      */
     public static function info(string $title, string $body, array $data = []): self
     {
@@ -50,7 +59,7 @@ class FcmMessageData extends Data
     }
 
     /**
-     * Create an alert notification.
+     * Creates a high-priority alert notification.
      */
     public static function alert(string $title, string $body, array $data = []): self
     {
@@ -64,7 +73,7 @@ class FcmMessageData extends Data
     }
 
     /**
-     * Create a success notification.
+     * Creates a positive outcome notification.
      */
     public static function success(string $title, string $body, array $data = []): self
     {
@@ -77,7 +86,7 @@ class FcmMessageData extends Data
     }
 
     /**
-     * Create a warning notification.
+     * Creates a cautionary notification about potential issues.
      */
     public static function warning(string $title, string $body, array $data = []): self
     {
@@ -91,7 +100,7 @@ class FcmMessageData extends Data
     }
 
     /**
-     * Create an error notification.
+     * Creates a critical failure notification.
      */
     public static function error(string $title, string $body, array $data = []): self
     {
@@ -105,7 +114,7 @@ class FcmMessageData extends Data
     }
 
     /**
-     * Create a ping notification for connectivity check.
+     * Creates a connectivity test notification.
      */
     public static function ping(string $title = 'Connectivity Check', string $body = ''): self
     {
@@ -119,49 +128,56 @@ class FcmMessageData extends Data
     }
 
     /**
-     * Get notification priority based on type.
+     * Resolves the delivery priority based on notification type.
+     *
+     * @return string 'high' for time-sensitive notifications, 'normal' otherwise
      */
     public function getPriority(): string
     {
-        return $this->type->priority();
+        return $this->type->fcmPriority();
     }
 
     /**
-     * Check if this notification should be visible to the user.
+     * Determines if the notification should be displayed to the user.
+     *
+     * @return bool True for user-visible notifications, false for silent/background
      */
     public function isVisible(): bool
     {
-        return $this->type->isVisible();
+        return $this->type->shouldDisplayToUser();
     }
 
     /**
-     * Convert to FCM data payload (all values must be strings).
+     * Transforms the DTO into an FCM-compatible payload.
      *
-     * @return array<string, string>
+     * All values are converted to strings as required by FCM's API.
+     * Null values are automatically filtered out to minimize payload size.
+     *
+     * @return array<string, string> Key-value pairs with string values only
      */
     public function toFcmData(): array
     {
-        $data = array_merge($this->data, [
+        $payload = array_merge($this->data, [
             'type' => $this->type->value,
             'title' => $this->title,
             'body' => $this->body,
             'priority' => $this->getPriority(),
             'timestamp' => (string) time(),
+            'image_url' => $this->imageUrl,
+            'click_action' => $this->clickAction,
+            'ttl' => $this->ttl > 0 ? (string) $this->ttl : null,
         ]);
 
-        if ($this->imageUrl !== null) {
-            $data['image_url'] = $this->imageUrl;
-        }
+        // Remove null values to keep payload minimal
+        $filteredPayload = array_filter(
+            $payload,
+            fn($value): bool => $value !== null
+        );
 
-        if ($this->clickAction !== null) {
-            $data['click_action'] = $this->clickAction;
-        }
-
-        if ($this->ttl > 0) {
-            $data['ttl'] = (string) $this->ttl;
-        }
-
-        // Convert all values to strings for FCM
-        return array_map(fn($value): string => (string) $value, $data);
+        // Convert all remaining values to strings as required by FCM
+        return array_map(
+            fn($value): string => (string) $value,
+            $filteredPayload
+        );
     }
 }

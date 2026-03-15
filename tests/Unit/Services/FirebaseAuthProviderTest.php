@@ -13,9 +13,13 @@ use Andydefer\PushNotifier\Tests\TestCase;
 use Andydefer\PushNotifier\Tests\Fixtures\FirebaseConfigFixture;
 use Mockery;
 use Mockery\MockInterface;
+use RuntimeException;
 
 /**
- * Unit tests for FirebaseAuthProvider service.
+ * Unit tests validating FirebaseAuthProvider token management behavior.
+ *
+ * Verifies OAuth2 token acquisition, caching strategies, expiration handling,
+ * and error scenarios for Firebase Cloud Messaging authentication.
  */
 final class FirebaseAuthProviderTest extends TestCase
 {
@@ -24,7 +28,7 @@ final class FirebaseAuthProviderTest extends TestCase
     private FirebaseConfigData $validConfig;
 
     /**
-     * Set up test environment.
+     * Initializes test environment with mocked HTTP client and valid configuration.
      */
     protected function setUp(): void
     {
@@ -33,20 +37,19 @@ final class FirebaseAuthProviderTest extends TestCase
         /** @var HttpClientInterface&MockInterface $httpClient */
         $this->httpClient = Mockery::mock(HttpClientInterface::class);
 
-        // Create real instance of FirebaseAuthProvider
-        $this->authProvider = new FirebaseAuthProvider($this->httpClient);
+        $this->authProvider = new FirebaseAuthProvider(httpClient: $this->httpClient);
 
         $this->validConfig = FirebaseConfigData::fromServiceAccount(
-            FirebaseConfigFixture::getValidConfig()
+            serviceAccountData: FirebaseConfigFixture::getValidConfig()
         );
     }
 
     /**
-     * Test that getAccessToken returns a valid token.
+     * Confirms successful token retrieval from OAuth2 endpoint.
      */
     public function test_get_access_token_returns_valid_token(): void
     {
-        // Arrange
+        // Arrange: Simulate successful OAuth2 response
         $mockResponse = new HttpResponseData(
             statusCode: 200,
             data: FirebaseConfigFixture::getMockOAuthResponse()
@@ -62,19 +65,19 @@ final class FirebaseAuthProviderTest extends TestCase
             })
             ->andReturn($mockResponse);
 
-        // Act
-        $token = $this->authProvider->getAccessToken($this->validConfig);
+        // Act: Request access token
+        $token = $this->authProvider->getAccessToken(config: $this->validConfig);
 
-        // Assert
+        // Assert: Verify token format and value
         $this->assertEquals('ya29.mock.access.token.123456', $token);
     }
 
     /**
-     * Test that getAccessToken caches the token.
+     * Verifies that tokens are cached to minimize OAuth2 requests.
      */
     public function test_get_access_token_caches_the_token(): void
     {
-        // Arrange
+        // Arrange: Configure single HTTP call expectation
         $mockResponse = new HttpResponseData(
             statusCode: 200,
             data: FirebaseConfigFixture::getMockOAuthResponse()
@@ -82,29 +85,29 @@ final class FirebaseAuthProviderTest extends TestCase
 
         $this->httpClient
             ->shouldReceive('post')
-            ->once() // Should be called only once
+            ->once()
             ->andReturn($mockResponse);
 
-        // Act
-        $token1 = $this->authProvider->getAccessToken($this->validConfig);
-        $token2 = $this->authProvider->getAccessToken($this->validConfig);
+        // Act: Request token twice in succession
+        $firstToken = $this->authProvider->getAccessToken(config: $this->validConfig);
+        $secondToken = $this->authProvider->getAccessToken(config: $this->validConfig);
 
-        // Assert
-        $this->assertEquals($token1, $token2);
+        // Assert: Same token returned without second HTTP call
+        $this->assertEquals($firstToken, $secondToken);
     }
 
     /**
-     * Test that clearCache forces token refresh.
+     * Ensures clearCache forces a fresh token request.
      */
     public function test_clear_cache_forces_token_refresh(): void
     {
-        // Arrange
-        $mockResponse1 = new HttpResponseData(
+        // Arrange: Prepare two different token responses
+        $firstResponse = new HttpResponseData(
             statusCode: 200,
             data: FirebaseConfigFixture::getMockOAuthResponse()
         );
 
-        $mockResponse2 = new HttpResponseData(
+        $secondResponse = new HttpResponseData(
             statusCode: 200,
             data: array_merge(
                 FirebaseConfigFixture::getMockOAuthResponse(),
@@ -115,25 +118,25 @@ final class FirebaseAuthProviderTest extends TestCase
         $this->httpClient
             ->shouldReceive('post')
             ->twice()
-            ->andReturn($mockResponse1, $mockResponse2);
+            ->andReturn($firstResponse, $secondResponse);
 
-        // Act
-        $token1 = $this->authProvider->getAccessToken($this->validConfig);
+        // Act: Get token, clear cache, get another token
+        $firstToken = $this->authProvider->getAccessToken(config: $this->validConfig);
         $this->authProvider->clearCache();
-        $token2 = $this->authProvider->getAccessToken($this->validConfig);
+        $secondToken = $this->authProvider->getAccessToken(config: $this->validConfig);
 
-        // Assert
-        $this->assertNotEquals($token1, $token2);
-        $this->assertEquals('new.token.789', $token2);
+        // Assert: Tokens are different and second matches expected value
+        $this->assertNotEquals($firstToken, $secondToken);
+        $this->assertEquals('new.token.789', $secondToken);
     }
 
     /**
-     * Test that getAccessToken throws exception on OAuth error.
+     * Validates proper exception when OAuth2 returns error response.
      */
     public function test_throws_exception_on_oauth_error(): void
     {
-        // Arrange
-        $mockResponse = new HttpResponseData(
+        // Arrange: Simulate OAuth2 error response
+        $errorResponse = new HttpResponseData(
             statusCode: 400,
             data: [
                 'error' => 'invalid_grant',
@@ -144,23 +147,23 @@ final class FirebaseAuthProviderTest extends TestCase
         $this->httpClient
             ->shouldReceive('post')
             ->once()
-            ->andReturn($mockResponse);
+            ->andReturn($errorResponse);
 
-        // Assert
+        // Assert: Expect authentication exception with error details
         $this->expectException(FirebaseAuthException::class);
         $this->expectExceptionMessage('Failed to obtain access token: HTTP 400 - invalid_grant Invalid JWT');
 
-        // Act
-        $this->authProvider->getAccessToken($this->validConfig);
+        // Act: Attempt to get token (should throw)
+        $this->authProvider->getAccessToken(config: $this->validConfig);
     }
 
     /**
-     * Test that getAccessToken throws exception when response has no data.
+     * Verifies exception when OAuth2 returns empty response body.
      */
     public function test_throws_exception_when_response_has_no_data(): void
     {
-        // Arrange
-        $mockResponse = new HttpResponseData(
+        // Arrange: Simulate empty response
+        $emptyResponse = new HttpResponseData(
             statusCode: 200,
             data: null
         );
@@ -168,87 +171,87 @@ final class FirebaseAuthProviderTest extends TestCase
         $this->httpClient
             ->shouldReceive('post')
             ->once()
-            ->andReturn($mockResponse);
+            ->andReturn($emptyResponse);
 
-        // Assert
+        // Assert: Expect generic authentication exception
         $this->expectException(FirebaseAuthException::class);
         $this->expectExceptionMessage('Failed to obtain access token: HTTP 200 - Unknown error');
 
-        // Act
-        $this->authProvider->getAccessToken($this->validConfig);
+        // Act: Attempt to get token (should throw)
+        $this->authProvider->getAccessToken(config: $this->validConfig);
     }
 
     /**
-     * Test that getAccessToken throws exception when response missing access_token.
+     * Confirms exception when OAuth2 response lacks access_token field.
      */
     public function test_throws_exception_when_response_missing_access_token(): void
     {
-        // Arrange
-        $mockResponse = new HttpResponseData(
+        // Arrange: Return valid status but incomplete data
+        $incompleteResponse = new HttpResponseData(
             statusCode: 200,
-            data: ['expires_in' => 3600] // missing access_token
+            data: ['expires_in' => 3600]
         );
 
         $this->httpClient
             ->shouldReceive('post')
             ->once()
-            ->andReturn($mockResponse);
+            ->andReturn($incompleteResponse);
 
-        // Assert
+        // Assert: Expect specific missing token error
         $this->expectException(FirebaseAuthException::class);
         $this->expectExceptionMessage('OAuth response missing access_token');
 
-        // Act
-        $this->authProvider->getAccessToken($this->validConfig);
+        // Act: Attempt to get token (should throw)
+        $this->authProvider->getAccessToken(config: $this->validConfig);
     }
 
     /**
-     * Test that getAccessToken throws exception when HTTP request fails.
+     * Ensures HTTP client failures are properly wrapped.
      */
     public function test_throws_exception_when_http_request_fails(): void
     {
-        // Arrange
+        // Arrange: Simulate network failure
         $this->httpClient
             ->shouldReceive('post')
             ->once()
-            ->andThrow(new \RuntimeException('Connection timeout'));
+            ->andThrow(new RuntimeException('Connection timeout'));
 
+        // Assert: Verify exception wrapping
         try {
-            // Act
-            $this->authProvider->getAccessToken($this->validConfig);
+            // Act: Attempt to get token (should throw wrapped exception)
+            $this->authProvider->getAccessToken(config: $this->validConfig);
             $this->fail('Expected exception was not thrown');
-        } catch (FirebaseAuthException $e) {
-            // Assert
-            $this->assertStringContainsString('Failed to obtain access token: HTTP 0 -', $e->getMessage());
-            $this->assertStringContainsString('Connection timeout', $e->getMessage());
-            $this->assertInstanceOf(\RuntimeException::class, $e->getPrevious());
+        } catch (FirebaseAuthException $exception) {
+            $this->assertStringContainsString('Failed to obtain access token: HTTP 0 -', $exception->getMessage());
+            $this->assertStringContainsString('Connection timeout', $exception->getMessage());
+            $this->assertInstanceOf(RuntimeException::class, $exception->getPrevious());
         }
     }
 
     /**
-     * Test that getProjectId returns correct project ID.
+     * Verifies project ID extraction from configuration.
      */
     public function test_get_project_id_returns_correct_id(): void
     {
-        // Act
-        $projectId = $this->authProvider->getProjectId($this->validConfig);
+        // Act: Extract project ID
+        $projectId = $this->authProvider->getProjectId(config: $this->validConfig);
 
-        // Assert
+        // Assert: Verify expected project identifier
         $this->assertEquals('autotext-d50ea', $projectId);
     }
 
     /**
-     * Test that token is refreshed when expired.
+     * Validates automatic token refresh after expiration.
      */
     public function test_token_is_refreshed_when_expired(): void
     {
-        // Arrange
-        $mockResponse1 = new HttpResponseData(
+        // Arrange: Configure two token responses
+        $firstResponse = new HttpResponseData(
             statusCode: 200,
             data: FirebaseConfigFixture::getMockOAuthResponse()
         );
 
-        $mockResponse2 = new HttpResponseData(
+        $secondResponse = new HttpResponseData(
             statusCode: 200,
             data: array_merge(
                 FirebaseConfigFixture::getMockOAuthResponse(),
@@ -259,37 +262,36 @@ final class FirebaseAuthProviderTest extends TestCase
         $this->httpClient
             ->shouldReceive('post')
             ->twice()
-            ->andReturn($mockResponse1, $mockResponse2);
+            ->andReturn($firstResponse, $secondResponse);
 
-        // Premier appel pour obtenir le token (caché)
-        $token1 = $this->authProvider->getAccessToken($this->validConfig);
+        // Act - Phase 1: Get initial token
+        $initialToken = $this->authProvider->getAccessToken(config: $this->validConfig);
 
-        // Utiliser la réflexion pour modifier la propriété privée tokenExpiry
-        // setAccessible() n'est plus nécessaire en PHP 8.1+
+        // Force token expiration using reflection
         $reflection = new \ReflectionClass($this->authProvider);
-        $tokenExpiryProperty = $reflection->getProperty('tokenExpiry');
-        $tokenExpiryProperty->setValue($this->authProvider, time() - 100); // Expiré il y a 100 secondes
+        $expiryProperty = $reflection->getProperty('cachedTokenExpiry');
+        $expiryProperty->setValue($this->authProvider, time() - 100);
 
-        // Act - deuxième appel, devrait rafraîchir le token
-        $token2 = $this->authProvider->getAccessToken($this->validConfig);
+        // Act - Phase 2: Request token after expiration
+        $refreshedToken = $this->authProvider->getAccessToken(config: $this->validConfig);
 
-        // Assert
-        $this->assertNotEquals($token1, $token2);
-        $this->assertEquals('refreshed.token.456', $token2);
+        // Assert: Verify token was refreshed
+        $this->assertNotEquals($initialToken, $refreshedToken);
+        $this->assertEquals('refreshed.token.456', $refreshedToken);
     }
 
     /**
-     * Test that cache is cleared when project changes.
+     * Ensures cache isolation between different Firebase projects.
      */
     public function test_cache_is_cleared_when_project_changes(): void
     {
-        // Arrange
-        $mockResponse1 = new HttpResponseData(
+        // Arrange: Prepare responses for different projects
+        $firstResponse = new HttpResponseData(
             statusCode: 200,
             data: FirebaseConfigFixture::getMockOAuthResponse()
         );
 
-        $mockResponse2 = new HttpResponseData(
+        $secondResponse = new HttpResponseData(
             statusCode: 200,
             data: array_merge(
                 FirebaseConfigFixture::getMockOAuthResponse(),
@@ -300,22 +302,22 @@ final class FirebaseAuthProviderTest extends TestCase
         $this->httpClient
             ->shouldReceive('post')
             ->twice()
-            ->andReturn($mockResponse1, $mockResponse2);
+            ->andReturn($firstResponse, $secondResponse);
 
-        $config1 = $this->validConfig;
+        $firstProjectConfig = $this->validConfig;
 
-        $config2 = FirebaseConfigData::fromServiceAccount([
+        $secondProjectConfig = FirebaseConfigData::fromServiceAccount(serviceAccountData: [
             'project_id' => 'different-project-456',
             'client_email' => 'admin@different-project.iam.gserviceaccount.com',
             'private_key' => $this->getValidPrivateKey(),
         ]);
 
-        // Act
-        $token1 = $this->authProvider->getAccessToken($config1);
-        $token2 = $this->authProvider->getAccessToken($config2);
+        // Act: Get tokens for different projects
+        $firstProjectToken = $this->authProvider->getAccessToken(config: $firstProjectConfig);
+        $secondProjectToken = $this->authProvider->getAccessToken(config: $secondProjectConfig);
 
-        // Assert
-        $this->assertNotEquals($token1, $token2);
-        $this->assertEquals('different.project.token', $token2);
+        // Assert: Different projects get different tokens
+        $this->assertNotEquals($firstProjectToken, $secondProjectToken);
+        $this->assertEquals('different.project.token', $secondProjectToken);
     }
 }

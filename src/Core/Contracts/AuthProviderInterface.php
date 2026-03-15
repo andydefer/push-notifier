@@ -5,46 +5,50 @@ declare(strict_types=1);
 namespace Andydefer\PushNotifier\Core\Contracts;
 
 use Andydefer\PushNotifier\Dtos\FirebaseConfigData;
+use Andydefer\PushNotifier\Exceptions\FirebaseAuthException;
 
 /**
- * Interface for Firebase authentication providers.
+ * Contract for Firebase authentication token management.
  *
- * This interface defines the contract for obtaining and managing
- * authentication tokens for Firebase Cloud Messaging.
+ * Implementations handle OAuth2 authentication with Firebase Cloud Messaging,
+ * including token acquisition, caching, and automatic refresh mechanisms.
  */
 interface AuthProviderInterface
 {
     /**
-     * Get a valid access token for Firebase.
+     * Retrieves a valid OAuth2 access token for Firebase Cloud Messaging.
      *
-     * This method should return a valid OAuth2 access token that can be used
-     * to authenticate requests to the FCM API. The token should be cached
-     * and automatically refreshed when expired.
+     * Implementations should cache tokens and automatically request new ones
+     * when the current token expires, ensuring continuous authentication.
      *
-     * @param FirebaseConfigData $config Firebase configuration containing credentials
-     * @return string Valid access token
+     * @param FirebaseConfigData $config Firebase project credentials and settings
+     * @return string Valid OAuth2 access token
      *
-     * @throws \Andydefer\PushNotifier\Exceptions\FirebaseAuthException
-     *         When authentication fails (invalid credentials, network error, etc.)
+     * @throws FirebaseAuthException When authentication fails due to:
+     *                               - Invalid credentials
+     *                               - Network connectivity issues
+     *                               - Malformed configuration
      */
     public function getAccessToken(FirebaseConfigData $config): string;
 
     /**
-     * Get the project ID from configuration.
+     * Extracts the Firebase project identifier from configuration.
      *
-     * This method returns the Firebase project ID that will be used
-     * in API endpoints.
+     * The project ID is essential for constructing API endpoints and
+     * identifying the target Firebase project for push notifications.
      *
-     * @param FirebaseConfigData $config Firebase configuration
-     * @return string Firebase project ID
+     * @param FirebaseConfigData $config Firebase project configuration
+     * @return string Firebase project identifier
      */
     public function getProjectId(FirebaseConfigData $config): string;
 
     /**
-     * Clear cached token to force refresh.
+     * Purges the cached authentication token.
      *
-     * This method should clear any cached access tokens, forcing
-     * a new token to be obtained on the next request.
+     * Forces a fresh token retrieval on the next access request. Useful for:
+     * - Testing scenarios
+     * - Manual token invalidation
+     * - Configuration changes
      */
     public function clearCache(): void;
 }
