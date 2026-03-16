@@ -24,15 +24,6 @@
         </include>
     </source>
 
-    <!-- Comment out or remove the coverage section if you don't need it
-    <coverage>
-        <report>
-            <html outputDirectory="coverage"/>
-            <text outputFile="php://stdout"/>
-        </report>
-    </coverage>
-    -->
-
     <php>
         <ini name="error_reporting" value="-1"/>
         <env name="FIREBASE_PROJECT_ID" value="test-project"/>

@@ -40,7 +40,7 @@ all.txt
 #art/
 #Makefile
 #examples/
-#prompts/
+prompts/
 
 # Optional: ignore Rector generated cache
 rector.php.cache

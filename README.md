@@ -1,9 +1,10 @@
+
 # PushNotifier
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.3%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**PushNotifier** est un package PHP puissant et flexible (compatible avec tout framework ou application brute) pour l'envoi de notifications push via **Firebase Cloud Messaging (FCM) v1**. Construit avec une architecture robuste et orientée contrat (interfaces), il simplifie l'authentification, la construction de payloads et la gestion des réponses, vous permettant d'intégrer des notifications riches et fiables en quelques minutes.
+**PushNotifier** est un package PHP puissant et flexible (compatible avec tout framework ou application brute) pour l'envoi de notifications push via **Firebase Cloud Messaging (FCM) v1**. Construit avec une architecture robuste et orientée contrat (interfaces), il simplifie l'authentification et l'envoi de notifications, vous permettant d'intégrer des notifications fiables en quelques minutes.
 
 ## 📦 Installation
 
@@ -60,7 +61,7 @@ Le package est construit autour de plusieurs concepts puissants pour garantir fl
 
 ### 1. La Factory comme Point d'Entrée Unique
 
-La classe `NotificationFactory` est le point d'entrée principal. Elle centralise la création de vos services et vous permet d'injecter vos propres implémentations des composants de bas niveau (client HTTP, fournisseur d'auth, constructeur de payload). C'est le cœur de l'injection de dépendances du package.
+La classe `NotificationFactory` est le point d'entrée principal. Elle centralise la création de vos services et vous permet d'injecter vos propres implémentations des composants de bas niveau (client HTTP, fournisseur d'auth). C'est le cœur de l'injection de dépendances du package.
 
 ```php
 $factory = new NotificationFactory();
@@ -74,130 +75,122 @@ $service = $factory->makeFirebaseServiceFromEnv($_ENV);
 
 ### 2. Contrats pour la Flexibilité (Interfaces)
 
-Le package est défini par des **contrats (interfaces)**. Cela vous permet de remplacer n'importe quel composant interne par votre propre logique sans modifier le cœur du package, que vous soyez dans Laravel, Symfony ou un projet vanilla.
+Le package est défini par des **contrats (interfaces)**. Cela vous permet de remplacer n'importe quel composant interne par votre propre logique sans modifier le cœur du package.
 
-*   `HttpClientInterface`: Pour utiliser un client HTTP différent (par exemple, si vous préférez Symfony HttpClient au lieu de Guzzle).
-*   `AuthProviderInterface`: Pour gérer l'authentification Firebase d'une manière différente (par exemple, en utilisant une clé API au lieu d'un JWT).
-*   `PayloadBuilderInterface`: Pour construire le payload FCM selon vos propres besoins spécifiques.
+*   `HttpClientInterface`: Pour utiliser un client HTTP différent.
+*   `AuthProviderInterface`: Pour gérer l'authentification Firebase d'une manière différente.
+*   `PayloadBuilderInterface`: Pour construire le payload FCM selon vos propres besoins (optionnel, une implémentation par défaut est fournie).
 
 ```php
 // Exemple : Utiliser un client HTTP personnalisé
 use App\Services\MyCustomHttpClient;
 
 $factory = new NotificationFactory(
-    new MyCustomHttpClient(), // Injecté ici
-    // null, // Garde l'auth par défaut
-    // null  // Garde le builder par défaut
+    new MyCustomHttpClient() // Injecté ici
 );
 $service = $factory->makeFirebaseServiceFromJsonFile($jsonPath);
 ```
 
-### 3. DTOs pour la Clarté et la Cohérence (Data Transfer Objects)
+### 3. DTOs pour la Clarté et la Cohérence
 
-Toutes les données manipulées par le package sont encapsulées dans des DTOs (Data Transfer Objects), rendant le code plus prévisible et auto-documenté.
+Toutes les données manipulées par le package sont encapsulées dans des DTOs (Data Transfer Objects).
 
-*   **`FirebaseConfigData`** : Contient la configuration Firebase (project ID, email, clé privée).
-*   **`FcmMessageData`** : Représente le message à envoyer (titre, corps, type, données additionnelles...). Des méthodes statiques comme `info()`, `alert()`, `ping()` permettent une création rapide et expressive.
-*   **`FcmResponseData`** : Représente la réponse de l'API FCM, avec des méthodes utiles comme `isInvalidToken()`, `isQuotaExceeded()`, etc.
+*   **`FirebaseConfigData`** : Contient la configuration Firebase.
+*   **`FcmMessageData`** : Représente le message à envoyer, avec une structure simple : `type` (string en SCREAMING_SNAKE_CASE) et `data` (array avec clés en camelCase).
+*   **`FcmResponseData`** : Représente la réponse de l'API FCM.
 *   **`HttpResponseData`** : Encapsule une réponse HTTP brute.
 
-### 4. Exceptions Spécifiques pour une Gestion d'Erreurs Fine
+### 4. Exceptions Spécifiques
 
-Le package lance des exceptions spécifiques pour chaque type d'erreur, ce qui vous permet de les capturer et de les traiter de manière granulaire.
+Le package lance des exceptions spécifiques pour chaque type d'erreur.
 
-*   `FcmSendException`: Levée lors d'un échec d'envoi de notification (contient le code HTTP et le code d'erreur FCM).
-*   `FirebaseAuthException`: Levée en cas de problème d'authentification avec Firebase.
+*   `FcmSendException`: Levée lors d'un échec d'envoi.
+*   `FirebaseAuthException`: Levée en cas de problème d'authentification.
 *   `InvalidConfigurationException`: Levée si la configuration Firebase est invalide.
 
-## 📧 Création de Messages Riches
+## 📧 Création de Messages
 
-Le DTO `FcmMessageData` est très puissant et vous permet de créer des notifications riches pour Android et iOS.
+Le DTO `FcmMessageData` a une structure simple et flexible :
+
+- **`type`** : string en SCREAMING_SNAKE_CASE (libre choix)
+- **`data`** : array avec clés en camelCase (contenu libre)
 
 ### Types de Notifications Prédéfinis
-
-Utilisez les méthodes statiques pour créer des messages avec des priorités et comportements par défaut adaptés.
 
 ```php
 use Andydefer\PushNotifier\Dtos\FcmMessageData;
 
-// Notification d'information (priorité normale)
-$info = FcmMessageData::info('Mise à jour', 'Une nouvelle version est disponible.');
+// Notification d'information
+$info = FcmMessageData::info('Mise à jour', 'Nouvelle version disponible.');
 
-// Notification d'alerte (priorité élevée)
+// Notification d'alerte
 $alert = FcmMessageData::alert('Alerte', 'Paiement en attente.');
 
-// Notification de succès (priorité normale)
-$success = FcmMessageData::success('Succès', 'Votre commande est confirmée.');
+// Notification de succès
+$success = FcmMessageData::success('Succès', 'Commande confirmée.');
 
-// Notification d'erreur (priorité élevée)
+// Notification d'erreur
 $error = FcmMessageData::error('Erreur', 'Connexion perdue.');
 
-// Notification silencieuse pour réveiller l'application en arrière-plan
-$ping = FcmMessageData::ping();
+// Notification silencieuse
+$ping = FcmMessageData::ping(['sync' => true]);
 ```
 
-### Personnalisation Avancée
+### Données Personnalisées
 
-Le constructeur de `FcmMessageData` accepte de nombreux paramètres pour un contrôle total.
+Vous pouvez ajouter n'importe quelles données dans le tableau `data` :
 
 ```php
-$message = new FcmMessageData(
-    type: \Andydefer\PushNotifier\Enums\NotificationType::INFO,
-    title: 'Nouveau message',
-    body: 'Vous avez reçu un message de Jean.',
-    data: ['user_id' => '123', 'conversation_id' => '456'], // Données personnalisées
-    imageUrl: 'https://example.com/avatar.jpg',
-    clickAction: 'OPEN_CONVERSATION', // Action au clic sur Android
-    channelId: 'messages', // Canal de notification Android
-    badge: 5, // Badge sur l'icône iOS
-    sound: 'message.wav', // Son personnalisé
-    ttl: 86400 // Temps de vie en secondes (24h)
+$message = FcmMessageData::make(
+    type: 'CHAT_MESSAGE',
+    data: [
+        'title' => 'Nouveau message',
+        'body' => 'Vous avez reçu un message',
+        'senderId' => 123,
+        'senderName' => 'Jean',
+        'conversationId' => 456,
+        'attachments' => [
+            ['type' => 'image', 'url' => 'https://...']
+        ]
+    ]
 );
 ```
 
-## 🛠️ Utilisation Avancée du Service Firebase
+## 🛠️ Utilisation Avancée
 
-### Envoyer à de multiples appareils
-
-La méthode `sendMulticast` gère l'envoi à plusieurs tokens, avec une petite pause pour éviter le rate-limiting.
+### Envoyer à plusieurs appareils
 
 ```php
-$tokens = ['token1', 'token2', 'token3', ...];
+$tokens = ['token1', 'token2', 'token3'];
 $message = FcmMessageData::alert('Promo Flash', '-50% sur tout !');
 
 $results = $firebaseService->sendMulticast($tokens, $message);
 
 foreach ($results as $token => $response) {
     if ($response->success) {
-        // Succès pour ce token
+        // Succès
     } else if ($response->isInvalidToken()) {
-        // Le token est invalide, à supprimer de votre base de données
-        $this->deleteInvalidToken($token);
+        // Token invalide, à supprimer
     }
 }
 ```
 
 ### Valider un token
 
-Vérifiez si un token est toujours valide avant de l'utiliser.
-
 ```php
 if ($firebaseService->validateToken($deviceToken)) {
-    // Le token est valide
+    // Token valide
 } else {
-    // Le token est invalide, à supprimer
+    // Token invalide, à supprimer
 }
 ```
 
 ### Analyser les réponses d'erreur
 
-Le DTO `FcmResponseData` fournit des méthodes pour vous aider à réagir en fonction du type d'erreur.
-
 ```php
 try {
     $response = $firebaseService->send($token, $message);
 } catch (FcmSendException $e) {
-    // Vous pouvez aussi récupérer un objet FcmResponseData à partir de l'exception
     $errorResponse = FcmResponseData::fromError(
         $e->getErrorCode() ?? 'UNKNOWN',
         $e->getMessage(),
@@ -207,109 +200,43 @@ try {
     if ($errorResponse->isInvalidToken()) {
         // Marquer le token comme invalide
     } elseif ($errorResponse->isQuotaExceeded()) {
-        // Gérer le dépassement de quota (mettre en file d'attente, réessayer plus tard)
-    } elseif ($errorResponse->isAuthError()) {
-        // Problème d'authentification, peut-être que les identifiants ont expiré/changé
-        error_log('Problème d\'authentification Firebase');
+        // Gérer le dépassement de quota
     }
 }
 ```
 
-## ⚙️ Configuration et Authentification
+## ⚙️ Configuration
 
 ### Méthodes de Configuration
 
-Plusieurs façons de configurer le service, par ordre de préférence :
+```php
+// Via fichier JSON (recommandé)
+$service = $factory->makeFirebaseServiceFromJsonFile('/path/to/credentials.json');
 
-1.  **Via un fichier JSON (recommandé)** :
-    ```php
-    // Méthode recommandée : préserve le format de la clé privée
-    $service = $factory->makeFirebaseServiceFromJsonFile('/path/to/service-account.json');
-    ```
+// Via chaîne JSON
+$jsonContent = file_get_contents('/path/to/credentials.json');
+$service = $factory->makeFirebaseServiceFromJsonString($jsonContent);
 
-2.  **Via une chaîne JSON** :
-    ```php
-    $jsonContent = file_get_contents('/path/to/service-account.json');
-    $service = $factory->makeFirebaseServiceFromJsonString($jsonContent);
-    ```
+// Via tableau PHP
+$config = [
+    'project_id' => 'votre-projet-id',
+    'client_email' => 'firebase-adminsdk-xxx@...',
+    'private_key' => "-----BEGIN PRIVATE KEY-----\nMII...\n-----END PRIVATE KEY-----\n",
+];
+$service = $factory->makeFirebaseServiceFromArray($config);
 
-3.  **Via un tableau PHP** :
-    ```php
-    // ⚠️ Attention : soyez très vigilant avec les retours à la ligne de la clé privée !
-    $config = [
-        'project_id' => 'votre-projet-id',
-        'client_email' => 'firebase-adminsdk-xxx@...',
-        'private_key' => "-----BEGIN PRIVATE KEY-----\nMII...\n-----END PRIVATE KEY-----\n",
-    ];
-    $service = $factory->makeFirebaseServiceFromArray($config);
-    ```
+// Via variables d'environnement
+$service = $factory->makeFirebaseServiceFromEnv($_ENV);
+```
 
-4.  **Via les variables d'environnement** :
-    ```php
-    // Dans votre configuration d'environnement
-    // FIREBASE_PROJECT_ID=...
-    // FIREBASE_CLIENT_EMAIL=...
-    // FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMII...\n-----END PRIVATE KEY-----\n"
-    // FIREBASE_TOKEN_URI="https://oauth2.googleapis.com/token"
-
-    $service = $factory->makeFirebaseServiceFromEnv($_ENV);
-    ```
-
-### Validation de la Configuration
-
-Le package valide automatiquement votre configuration. Si la clé privée n'a pas le bon format (avec les marqueurs `BEGIN` et `END`), une exception `InvalidConfigurationException` sera levée.
-
-## 🧪 Tests et Fiabilités
-
-Le package est livré avec une suite de tests exhaustive.
-
-### Lancement des Tests
+## 🧪 Tests
 
 ```bash
 # Exécuter tous les tests
 composer test
 
-# Exécuter les tests avec couverture de code
+# Exécuter les tests avec couverture
 composer test-coverage
-```
-
-Les tests couvrent :
-
-*   ✅ Création et validation des DTOs (`FirebaseConfigData`, `FcmMessageData`...)
-*   ✅ Fonctionnement des helpers ( `info()`, `alert()`, `ping()`...)
-*   ✅ Construction correcte du payload FCM pour Android et iOS.
-*   ✅ Génération et échange de JWT pour l'authentification OAuth2.
-*   ✅ Envoi réussi de notifications.
-*   ✅ Gestion des erreurs HTTP et des réponses FCM (token invalide, quota dépassé...).
-*   ✅ Mécanisme de cache des tokens d'accès.
-*   ✅ Envoi multicast et validation de token.
-
-## 🚨 Gestion des Erreurs
-
-Voici comment capturer et traiter les exceptions de manière élégante.
-
-```php
-use Andydefer\PushNotifier\Exceptions\FcmSendException;
-use Andydefer\PushNotifier\Exceptions\FirebaseAuthException;
-use Andydefer\PushNotifier\Exceptions\InvalidConfigurationException;
-
-try {
-    $response = $firebaseService->send($token, $message);
-} catch (FcmSendException $e) {
-    // Erreur lors de l'envoi (mauvaise requête, token invalide, quota...)
-    error_log("Erreur d'envoi FCM: " . $e->getMessage());
-    // Notifier l'utilisateur ou réessayer plus tard
-} catch (FirebaseAuthException $e) {
-    // Erreur d'authentification (mauvaise clé, projet inexistant...)
-    error_log("Erreur d'authentification Firebase: " . $e->getMessage());
-    // Alerter l'administrateur
-} catch (InvalidConfigurationException $e) {
-    // Erreur dans la configuration fournie
-    error_log("Configuration Firebase invalide: " . $e->getMessage());
-} catch (\Exception $e) {
-    // Autres erreurs (timeout, réseau...)
-    error_log("Erreur inattendue: " . $e->getMessage());
-}
 ```
 
 ## 📚 API Complète
@@ -318,71 +245,62 @@ try {
 
 | Méthode | Description |
 | :--- | :--- |
-| `__construct(?HttpClientInterface, ?AuthProviderInterface, ?PayloadBuilderInterface)` | Constructeur avec injection de dépendances optionnelle. |
-| `makeFirebaseServiceFromJsonFile(string $jsonPath): FirebaseService` | Crée un service à partir d'un fichier JSON (recommandé). |
-| `makeFirebaseServiceFromJsonString(string $jsonContent): FirebaseService` | Crée un service à partir d'une chaîne JSON. |
-| `makeFirebaseServiceFromArray(array $config): FirebaseService` | Crée un service à partir d'un tableau de config. |
-| `makeFirebaseServiceFromEnv(array $env): FirebaseService` | Crée un service à partir des variables d'environnement. |
-| `makeFirebaseService(FirebaseConfigData $config): FirebaseService` | Crée un service à partir d'un DTO de configuration. |
-| `getHttpClient(): HttpClientInterface` | Récupère le client HTTP. |
-| `getAuthProvider(): AuthProviderInterface` | Récupère le fournisseur d'auth. |
-| `getPayloadBuilder(): PayloadBuilderInterface` | Récupère le constructeur de payload. |
+| `__construct(?HttpClientInterface, ?AuthProviderInterface)` | Constructeur avec injection optionnelle. |
+| `makeFirebaseServiceFromJsonFile(string $path): FirebaseService` | Crée un service depuis un fichier JSON. |
+| `makeFirebaseServiceFromJsonString(string $json): FirebaseService` | Crée un service depuis une chaîne JSON. |
+| `makeFirebaseServiceFromArray(array $config): FirebaseService` | Crée un service depuis un tableau. |
+| `makeFirebaseServiceFromEnv(array $env): FirebaseService` | Crée un service depuis les variables d'env. |
+| `makeFirebaseService(FirebaseConfigData $config): FirebaseService` | Crée un service depuis un DTO. |
 
 ### `FirebaseService`
 
 | Méthode | Description |
 | :--- | :--- |
-| `send(string $deviceToken, FcmMessageData $message): FcmResponseData` | Envoie un message à un appareil. |
-| `sendMulticast(array $deviceTokens, FcmMessageData $message): array` | Envoie un message à plusieurs appareils. |
-| `sendInfo(string $deviceToken, string $title, string $body, array $data = []): FcmResponseData` | Envoie une notification de type "info". |
-| `sendAlert(...)` | Envoie une notification de type "alert". |
-| `sendWarning(...)` | Envoie une notification de type "warning". |
-| `sendSuccess(...)` | Envoie une notification de type "success". |
-| `sendError(...)` | Envoie une notification de type "error". |
-| `ping(string $deviceToken): FcmResponseData` | Envoie une notification silencieuse (content-available). |
-| `validateToken(string $deviceToken): bool` | Vérifie si un token est valide. |
+| `send(string $token, FcmMessageData $message): FcmResponseData` | Envoie une notification. |
+| `sendMulticast(array $tokens, FcmMessageData $message): array` | Envoie à plusieurs appareils. |
+| `sendInfo(string $token, string $title, string $body, array $data = []): FcmResponseData` | Envoie une notification "info". |
+| `sendAlert(...)` | Envoie une notification "alert". |
+| `sendWarning(...)` | Envoie une notification "warning". |
+| `sendSuccess(...)` | Envoie une notification "success". |
+| `sendError(...)` | Envoie une notification "error". |
+| `ping(string $token): FcmResponseData` | Envoie une notification silencieuse. |
+| `validateToken(string $token): bool` | Vérifie si un token est valide. |
 
 ### `FcmMessageData`
 
 | Méthode Statique | Description |
 | :--- | :--- |
-| `info(string $title, string $body, array $data = []): self` | Crée un message d'information. |
-| `alert(string $title, string $body, array $data = []): self` | Crée un message d'alerte (priorité haute). |
-| `warning(string $title, string $body, array $data = []): self` | Crée un message d'avertissement (priorité haute). |
-| `success(string $title, string $body, array $data = []): self` | Crée un message de succès. |
-| `error(string $title, string $body, array $data = []): self` | Crée un message d'erreur (priorité haute). |
-| `ping(string $title = 'Connectivity Check', string $body = ''): self` | Crée un message de ping silencieux. |
+| `make(string $type, array $data = []): self` | Crée un message personnalisé. |
+| `info(string $title, string $body, array $data = []): self` | Crée un message "INFO". |
+| `alert(string $title, string $body, array $data = []): self` | Crée un message "ALERT". |
+| `warning(string $title, string $body, array $data = []): self` | Crée un message "WARNING". |
+| `success(string $title, string $body, array $data = []): self` | Crée un message "SUCCESS". |
+| `error(string $title, string $body, array $data = []): self` | Crée un message "ERROR". |
+| `ping(array $data = []): self` | Crée un message "PING". |
 
 ### `FcmResponseData`
 
 | Méthode | Description |
 | :--- | :--- |
-| `fromFcmResponse(array $response, int $statusCode): self` | Crée une instance à partir d'une réponse FCM. |
-| `fromError(string $errorCode, string $errorMessage, ?int $statusCode): self` | Crée une instance à partir d'une erreur. |
-| `isInvalidToken(): bool` | Vérifie si l'erreur est due à un token invalide. |
+| `fromFcmResponse(array $response, int $statusCode): self` | Crée depuis une réponse FCM. |
+| `fromError(string $code, string $message, ?int $statusCode): self` | Crée depuis une erreur. |
+| `isInvalidToken(): bool` | Vérifie si le token est invalide. |
 | `isQuotaExceeded(): bool` | Vérifie si le quota est dépassé. |
-| `isAuthError(): bool` | Vérifie s'il s'agit d'une erreur d'authentification. |
+| `isAuthError(): bool` | Vérifie s'il s'agit d'une erreur d'auth. |
 
 ## 🤝 Contribution
 
 Les contributions sont les bienvenues !
 
-1.  **Forkez** le projet
-2.  **Créez une branche** (`git checkout -b feature/ma-super-fonctionnalite`)
-3.  **Commitez vos changements** (`git commit -m 'Ajoute une fonctionnalité géniale'`)
-4.  **Poussez vers la branche** (`git push origin feature/ma-super-fonctionnalite`)
-5.  **Ouvrez une Pull Request**
-
-Avant de soumettre, assurez-vous de :
-
-*   Passer tous les tests : `composer test`
-*   Respecter le style de code (PSR-12).
-*   Ajouter des tests pour toute nouvelle fonctionnalité.
+1. Forkez le projet
+2. Créez une branche (`git checkout -b feature/ma-fonctionnalite`)
+3. Commitez (`git commit -m 'Ajoute une fonctionnalité'`)
+4. Poussez (`git push origin feature/ma-fonctionnalite`)
+5. Ouvrez une Pull Request
 
 ## 📄 Licence
 
-Ce package est open-source et disponible sous la licence [MIT](LICENSE).
+MIT
 
 ---
-
-**PushNotifier** - Envoyez des notifications push riches et fiables avec PHP et Firebase, simplement, dans n'importe quel projet. 🚀📱
+**PushNotifier** - Des notifications push simples et fiables avec PHP et Firebase. 🚀

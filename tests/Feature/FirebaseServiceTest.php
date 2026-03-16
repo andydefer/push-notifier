@@ -9,7 +9,6 @@ use Andydefer\PushNotifier\Core\Contracts\HttpClientInterface;
 use Andydefer\PushNotifier\Core\Contracts\PayloadBuilderInterface;
 use Andydefer\PushNotifier\Dtos\FirebaseConfigData;
 use Andydefer\PushNotifier\Dtos\FcmMessageData;
-use Andydefer\PushNotifier\Enums\NotificationType;
 use Andydefer\PushNotifier\Exceptions\FcmSendException;
 use Andydefer\PushNotifier\Http\HttpResponseData;
 use Andydefer\PushNotifier\Services\FirebaseService;
@@ -118,11 +117,11 @@ final class FirebaseServiceTest extends TestCase
         $this->payloadBuilder
             ->shouldReceive('build')
             ->once()
-            ->withArgs(function ($token, $message) {
+            ->withArgs(function ($token, FcmMessageData $message) {
                 return $token === 'test-token'
-                    && $message->type->value === 'info'
-                    && $message->title === 'Info Title'
-                    && $message->body === 'Info Body';
+                    && $message->type === 'INFO'
+                    && $message->data['title'] === 'Info Title'
+                    && $message->data['body'] === 'Info Body';
             })
             ->andReturn(['message' => []]);
 
@@ -161,10 +160,9 @@ final class FirebaseServiceTest extends TestCase
         $this->payloadBuilder
             ->shouldReceive('build')
             ->once()
-            ->withArgs(function ($token, $message) {
+            ->withArgs(function ($token, FcmMessageData $message) {
                 return $token === 'test-token'
-                    && $message->type->value === 'ping'
-                    && $message->contentAvailable === true;
+                    && $message->type === 'PING';
             })
             ->andReturn(['message' => []]);
 
@@ -435,12 +433,16 @@ final class FirebaseServiceTest extends TestCase
                 ->once()
                 ->andReturn('token');
 
+            $expectedType = strtoupper($type);
+
             $this->payloadBuilder
                 ->shouldReceive('build')
                 ->once()
-                ->withArgs(function ($token, $message) use ($type) {
+                ->withArgs(function ($token, FcmMessageData $message) use ($expectedType, $params) {
                     return $token === 'test-token'
-                        && $message->type->value === $type;
+                        && $message->type === $expectedType
+                        && $message->data['title'] === $params[0]
+                        && $message->data['body'] === $params[1];
                 })
                 ->andReturn(['message' => []]);
 
@@ -470,21 +472,22 @@ final class FirebaseServiceTest extends TestCase
      */
     public function test_send_with_custom_data_preserves_fields(): void
     {
-        // Arrange: Create message with all possible customizations
+        // Arrange: Create message with custom data
         $deviceToken = 'test-token';
-        $customData = ['order_id' => '12345', 'user_id' => '67890'];
+        $customData = [
+            'orderId' => '12345',
+            'userId' => '67890',
+            'image' => 'https://example.com/image.jpg',
+            'clickAction' => 'OPEN_ORDER',
+            'channelId' => 'orders',
+            'badge' => 5,
+            'sound' => 'order.wav',
+            'ttl' => 3600
+        ];
 
-        $message = new FcmMessageData(
-            type: NotificationType::INFO,
-            title: 'Custom Title',
-            body: 'Custom Body',
-            data: $customData,
-            imageUrl: 'https://example.com/image.jpg',
-            clickAction: 'OPEN_ORDER',
-            channelId: 'orders',
-            badge: 5,
-            sound: 'order.wav',
-            ttl: 3600
+        $message = FcmMessageData::make(
+            type: 'INFO',
+            data: $customData
         );
 
         $this->authProvider
@@ -495,15 +498,10 @@ final class FirebaseServiceTest extends TestCase
         $this->payloadBuilder
             ->shouldReceive('build')
             ->once()
-            ->withArgs(function ($token, $msg) use ($customData) {
+            ->withArgs(function ($token, FcmMessageData $msg) use ($customData) {
                 return $token === 'test-token'
-                    && $msg->data === $customData
-                    && $msg->imageUrl === 'https://example.com/image.jpg'
-                    && $msg->clickAction === 'OPEN_ORDER'
-                    && $msg->channelId === 'orders'
-                    && $msg->badge === 5
-                    && $msg->sound === 'order.wav'
-                    && $msg->ttl === 3600;
+                    && $msg->type === 'INFO'
+                    && $msg->data === $customData;
             })
             ->andReturn(['message' => []]);
 
