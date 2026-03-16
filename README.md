@@ -1,4 +1,3 @@
-
 # PushNotifier
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.3%2B-blue)
@@ -96,7 +95,7 @@ $service = $factory->makeFirebaseServiceFromJsonFile($jsonPath);
 Toutes les données manipulées par le package sont encapsulées dans des DTOs (Data Transfer Objects).
 
 *   **`FirebaseConfigData`** : Contient la configuration Firebase.
-*   **`FcmMessageData`** : Représente le message à envoyer, avec une structure simple : `type` (string en SCREAMING_SNAKE_CASE) et `data` (array avec clés en camelCase).
+*   **`FcmMessageData`** : Représente le message à envoyer, avec une structure simple : `type` (string en SCREAMING_SNAKE_CASE) et `data` (array avec clés en camelCase, valeurs must be strings).
 *   **`FcmResponseData`** : Représente la réponse de l'API FCM.
 *   **`HttpResponseData`** : Encapsule une réponse HTTP brute.
 
@@ -113,32 +112,23 @@ Le package lance des exceptions spécifiques pour chaque type d'erreur.
 Le DTO `FcmMessageData` a une structure simple et flexible :
 
 - **`type`** : string en SCREAMING_SNAKE_CASE (libre choix)
-- **`data`** : array avec clés en camelCase (contenu libre)
+- **`data`** : array avec clés en camelCase (valeurs must be strings)
 
 ### Types de Notifications Prédéfinis
 
 ```php
 use Andydefer\PushNotifier\Dtos\FcmMessageData;
 
-// Notification d'information
+// Notification d'information (title et body uniquement)
 $info = FcmMessageData::info('Mise à jour', 'Nouvelle version disponible.');
 
-// Notification d'alerte
-$alert = FcmMessageData::alert('Alerte', 'Paiement en attente.');
-
-// Notification de succès
-$success = FcmMessageData::success('Succès', 'Commande confirmée.');
-
-// Notification d'erreur
-$error = FcmMessageData::error('Erreur', 'Connexion perdue.');
-
-// Notification silencieuse
-$ping = FcmMessageData::ping(['sync' => true]);
+// Notification silencieuse (avec connected: true par défaut)
+$ping = FcmMessageData::ping();
 ```
 
-### Données Personnalisées
+### Messages Personnalisés
 
-Vous pouvez ajouter n'importe quelles données dans le tableau `data` :
+Pour tous les autres types, utilisez la méthode `make()` :
 
 ```php
 $message = FcmMessageData::make(
@@ -146,12 +136,9 @@ $message = FcmMessageData::make(
     data: [
         'title' => 'Nouveau message',
         'body' => 'Vous avez reçu un message',
-        'senderId' => 123,
+        'senderId' => '123',
         'senderName' => 'Jean',
-        'conversationId' => 456,
-        'attachments' => [
-            ['type' => 'image', 'url' => 'https://...']
-        ]
+        'conversationId' => '456'
     ]
 );
 ```
@@ -162,7 +149,10 @@ $message = FcmMessageData::make(
 
 ```php
 $tokens = ['token1', 'token2', 'token3'];
-$message = FcmMessageData::alert('Promo Flash', '-50% sur tout !');
+$message = FcmMessageData::make('PROMO', [
+    'title' => 'Promo Flash',
+    'body' => '-50% sur tout !'
+]);
 
 $results = $firebaseService->sendMulticast($tokens, $message);
 
@@ -258,12 +248,8 @@ composer test-coverage
 | :--- | :--- |
 | `send(string $token, FcmMessageData $message): FcmResponseData` | Envoie une notification. |
 | `sendMulticast(array $tokens, FcmMessageData $message): array` | Envoie à plusieurs appareils. |
-| `sendInfo(string $token, string $title, string $body, array $data = []): FcmResponseData` | Envoie une notification "info". |
-| `sendAlert(...)` | Envoie une notification "alert". |
-| `sendWarning(...)` | Envoie une notification "warning". |
-| `sendSuccess(...)` | Envoie une notification "success". |
-| `sendError(...)` | Envoie une notification "error". |
-| `ping(string $token): FcmResponseData` | Envoie une notification silencieuse. |
+| `sendInfo(string $token, string $title, string $body): FcmResponseData` | Envoie une notification "INFO". |
+| `ping(string $token): FcmResponseData` | Envoie une notification silencieuse "PING". |
 | `validateToken(string $token): bool` | Vérifie si un token est valide. |
 
 ### `FcmMessageData`
@@ -271,12 +257,8 @@ composer test-coverage
 | Méthode Statique | Description |
 | :--- | :--- |
 | `make(string $type, array $data = []): self` | Crée un message personnalisé. |
-| `info(string $title, string $body, array $data = []): self` | Crée un message "INFO". |
-| `alert(string $title, string $body, array $data = []): self` | Crée un message "ALERT". |
-| `warning(string $title, string $body, array $data = []): self` | Crée un message "WARNING". |
-| `success(string $title, string $body, array $data = []): self` | Crée un message "SUCCESS". |
-| `error(string $title, string $body, array $data = []): self` | Crée un message "ERROR". |
-| `ping(array $data = []): self` | Crée un message "PING". |
+| `info(string $title, string $body): self` | Crée un message "INFO". |
+| `ping(): self` | Crée un message "PING" avec `['connected' => 'true']`. |
 
 ### `FcmResponseData`
 
@@ -286,7 +268,7 @@ composer test-coverage
 | `fromError(string $code, string $message, ?int $statusCode): self` | Crée depuis une erreur. |
 | `isInvalidToken(): bool` | Vérifie si le token est invalide. |
 | `isQuotaExceeded(): bool` | Vérifie si le quota est dépassé. |
-| `isAuthError(): bool` | Vérifie s'il s'agit d'une erreur d'auth. |
+| `isAuthError(): bool` | Vérifie s'il s'agit d'une erreur d'authentification. |
 
 ## 🤝 Contribution
 
@@ -303,4 +285,5 @@ Les contributions sont les bienvenues !
 MIT
 
 ---
+
 **PushNotifier** - Des notifications push simples et fiables avec PHP et Firebase. 🚀

@@ -63,7 +63,7 @@ final class FirebaseServiceTest extends TestCase
         $deviceToken = 'test-device-token-123';
         $message = FcmMessageData::info(title: 'Test Title', body: 'Test Body');
 
-        $mockPayload = ['message' => ['token' => $deviceToken, 'data' => []]];
+        $mockPayload = ['message' => ['token' => $deviceToken, 'data' => $message->data]];
         $mockFcmResponse = FirebaseConfigFixture::getMockFcmResponse();
 
         $this->authProvider
@@ -162,7 +162,8 @@ final class FirebaseServiceTest extends TestCase
             ->once()
             ->withArgs(function ($token, FcmMessageData $message) {
                 return $token === 'test-token'
-                    && $message->type === 'PING';
+                    && $message->type === 'PING'
+                    && $message->data['connected'] === 'true';
             })
             ->andReturn(['message' => []]);
 
@@ -414,57 +415,15 @@ final class FirebaseServiceTest extends TestCase
     }
 
     /**
-     * Validates all notification type helpers (alert, warning, success, error).
+     * Validates that sendInfo is the only helper (others removed).
      */
-    public function test_all_send_helpers_work_correctly(): void
+    public function test_only_info_helper_is_available(): void
     {
-        // Arrange: Set up test data for each notification type
-        $deviceToken = 'test-token';
-        $notificationTypes = [
-            'alert' => ['Alert', 'Alert Body'],
-            'warning' => ['Warning', 'Warning Body'],
-            'success' => ['Success', 'Success Body'],
-            'error' => ['Error', 'Error Body'],
-        ];
-
-        foreach ($notificationTypes as $type => $params) {
-            $this->authProvider
-                ->shouldReceive('getAccessToken')
-                ->once()
-                ->andReturn('token');
-
-            $expectedType = strtoupper($type);
-
-            $this->payloadBuilder
-                ->shouldReceive('build')
-                ->once()
-                ->withArgs(function ($token, FcmMessageData $message) use ($expectedType, $params) {
-                    return $token === 'test-token'
-                        && $message->type === $expectedType
-                        && $message->data['title'] === $params[0]
-                        && $message->data['body'] === $params[1];
-                })
-                ->andReturn(['message' => []]);
-
-            $this->httpClient
-                ->shouldReceive('post')
-                ->once()
-                ->andReturn(new HttpResponseData(
-                    statusCode: 200,
-                    data: FirebaseConfigFixture::getMockFcmResponse()
-                ));
-        }
-
-        // Act & Assert: Test each helper method
-        foreach ($notificationTypes as $type => $params) {
-            $method = 'send' . ucfirst($type);
-            $response = $this->firebaseService->$method(
-                deviceToken: $deviceToken,
-                title: $params[0],
-                body: $params[1]
-            );
-            $this->assertTrue($response->success);
-        }
+        $this->assertTrue(method_exists($this->firebaseService, 'sendInfo'));
+        $this->assertFalse(method_exists($this->firebaseService, 'sendAlert'));
+        $this->assertFalse(method_exists($this->firebaseService, 'sendWarning'));
+        $this->assertFalse(method_exists($this->firebaseService, 'sendSuccess'));
+        $this->assertFalse(method_exists($this->firebaseService, 'sendError'));
     }
 
     /**
@@ -480,9 +439,9 @@ final class FirebaseServiceTest extends TestCase
             'image' => 'https://example.com/image.jpg',
             'clickAction' => 'OPEN_ORDER',
             'channelId' => 'orders',
-            'badge' => 5,
+            'badge' => '5',
             'sound' => 'order.wav',
-            'ttl' => 3600
+            'ttl' => '3600'
         ];
 
         $message = FcmMessageData::make(

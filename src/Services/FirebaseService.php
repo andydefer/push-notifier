@@ -16,15 +16,13 @@ use RuntimeException;
 /**
  * Primary service for sending push notifications through Firebase Cloud Messaging.
  *
- * Handles single and batch message delivery, token validation, and various
- * notification types (info, alert, warning, success, error, ping).
- * Automatically manages authentication and retry mechanisms.
+ * Handles single and batch message delivery, token validation.
  */
 class FirebaseService
 {
     private const FCM_URL = 'https://fcm.googleapis.com/v1/projects/%s/messages:send';
     private const REQUEST_TIMEOUT = 30;
-    private const BATCH_DELAY_MICROSECONDS = 100000; // 100ms pause every 50 messages
+    private const BATCH_DELAY_MICROSECONDS = 100000;
     private const BATCH_SIZE_FOR_DELAY = 50;
 
     private HttpClientInterface $httpClient;
@@ -44,21 +42,6 @@ class FirebaseService
         $this->config = $config;
     }
 
-    /**
-     * Delivers a push notification to a specific device.
-     *
-     * Handles authentication, payload construction, and FCM API communication.
-     * Automatically refreshes expired tokens when authentication fails.
-     *
-     * @param string $deviceToken FCM registration token of target device
-     * @param FcmMessageData $message Notification content and configuration
-     * @return FcmResponseData Parsed FCM API response
-     *
-     * @throws FcmSendException When:
-     *                         - FCM API returns an error
-     *                         - Network communication fails
-     *                         - Response parsing fails
-     */
     public function send(string $deviceToken, FcmMessageData $message): FcmResponseData
     {
         $url = sprintf(self::FCM_URL, $this->config->projectId);
@@ -87,16 +70,6 @@ class FirebaseService
         }
     }
 
-    /**
-     * Delivers a notification to multiple devices simultaneously.
-     *
-     * Processes each device individually with automatic error handling.
-     * Includes rate limiting protection through strategic pauses.
-     *
-     * @param array<string> $deviceTokens List of FCM registration tokens
-     * @param FcmMessageData $message Notification to send to all devices
-     * @return array<string, FcmResponseData> Results indexed by device token
-     */
     public function sendMulticast(array $deviceTokens, FcmMessageData $message): array
     {
         $results = [];
@@ -109,98 +82,18 @@ class FirebaseService
         return $results;
     }
 
-    /**
-     * Sends an informational notification.
-     *
-     * @param string $deviceToken Target device token
-     * @param string $title Notification title
-     * @param string $body Notification body
-     * @param array<string, mixed> $data Optional custom data payload
-     */
-    public function sendInfo(string $deviceToken, string $title, string $body, array $data = []): FcmResponseData
+    public function sendInfo(string $deviceToken, string $title, string $body): FcmResponseData
     {
-        $message = FcmMessageData::info(title: $title, body: $body, data: $data);
+        $message = FcmMessageData::info(title: $title, body: $body);
         return $this->send(deviceToken: $deviceToken, message: $message);
     }
 
-    /**
-     * Sends an alert notification (high importance).
-     *
-     * @param string $deviceToken Target device token
-     * @param string $title Notification title
-     * @param string $body Notification body
-     * @param array<string, mixed> $data Optional custom data payload
-     */
-    public function sendAlert(string $deviceToken, string $title, string $body, array $data = []): FcmResponseData
-    {
-        $message = FcmMessageData::alert(title: $title, body: $body, data: $data);
-        return $this->send(deviceToken: $deviceToken, message: $message);
-    }
-
-    /**
-     * Sends a warning notification.
-     *
-     * @param string $deviceToken Target device token
-     * @param string $title Notification title
-     * @param string $body Notification body
-     * @param array<string, mixed> $data Optional custom data payload
-     */
-    public function sendWarning(string $deviceToken, string $title, string $body, array $data = []): FcmResponseData
-    {
-        $message = FcmMessageData::warning(title: $title, body: $body, data: $data);
-        return $this->send(deviceToken: $deviceToken, message: $message);
-    }
-
-    /**
-     * Sends a success confirmation notification.
-     *
-     * @param string $deviceToken Target device token
-     * @param string $title Notification title
-     * @param string $body Notification body
-     * @param array<string, mixed> $data Optional custom data payload
-     */
-    public function sendSuccess(string $deviceToken, string $title, string $body, array $data = []): FcmResponseData
-    {
-        $message = FcmMessageData::success(title: $title, body: $body, data: $data);
-        return $this->send(deviceToken: $deviceToken, message: $message);
-    }
-
-    /**
-     * Sends an error notification.
-     *
-     * @param string $deviceToken Target device token
-     * @param string $title Notification title
-     * @param string $body Notification body
-     * @param array<string, mixed> $data Optional custom data payload
-     */
-    public function sendError(string $deviceToken, string $title, string $body, array $data = []): FcmResponseData
-    {
-        $message = FcmMessageData::error(title: $title, body: $body, data: $data);
-        return $this->send(deviceToken: $deviceToken, message: $message);
-    }
-
-    /**
-     * Sends a silent background notification to wake the app.
-     *
-     * Useful for data sync triggers or token validation without user visibility.
-     *
-     * @param string $deviceToken Target device token
-     */
     public function ping(string $deviceToken): FcmResponseData
     {
         $message = FcmMessageData::ping();
         return $this->send(deviceToken: $deviceToken, message: $message);
     }
 
-    /**
-     * Verifies if a device token is still valid for receiving notifications.
-     *
-     * Attempts to send a silent ping and interprets the result.
-     * Invalid tokens typically indicate app uninstall or token expiration.
-     *
-     * @param string $deviceToken Token to validate
-     * @return bool True if token can receive notifications
-     */
     public function validateToken(string $deviceToken): bool
     {
         try {
@@ -211,16 +104,6 @@ class FirebaseService
         }
     }
 
-    /**
-     * Processes FCM HTTP response and converts to standardized format.
-     *
-     * Handles authentication errors by clearing token cache for retry.
-     *
-     * @param object $response Raw HTTP client response
-     * @return FcmResponseData Structured response data
-     *
-     * @throws FcmSendException When response indicates failure or malformed data
-     */
     private function handleFcmResponse(object $response): FcmResponseData
     {
         if (!$response->isSuccessful()) {
@@ -246,15 +129,6 @@ class FirebaseService
         );
     }
 
-    /**
-     * Attempts to send a notification and captures any errors as response.
-     *
-     * Ensures batch operations continue even if individual sends fail.
-     *
-     * @param string $deviceToken Target device
-     * @param FcmMessageData $message Notification to send
-     * @return FcmResponseData Success response or formatted error
-     */
     private function sendWithErrorCapture(string $deviceToken, FcmMessageData $message): FcmResponseData
     {
         try {
@@ -268,14 +142,6 @@ class FirebaseService
         }
     }
 
-    /**
-     * Introduces strategic delays to prevent FCM rate limiting.
-     *
-     * Pauses execution after every batch of messages to avoid
-     * overwhelming the FCM API.
-     *
-     * @param array $results Current batch results
-     */
     private function applyRateLimitingDelay(array $results): void
     {
         if (count($results) % self::BATCH_SIZE_FOR_DELAY === 0) {
@@ -283,11 +149,6 @@ class FirebaseService
         }
     }
 
-    /**
-     * Clears cached authentication when FCM reports authorization failures.
-     *
-     * @param string $errorCode FCM error code from response
-     */
     private function clearAuthCacheIfUnauthorized(string $errorCode): void
     {
         $unauthorizedCodes = ['UNAUTHENTICATED', 'PERMISSION_DENIED'];

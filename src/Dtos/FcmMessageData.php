@@ -11,7 +11,7 @@ use InvalidArgumentException;
  *
  * Simple et flexible :
  * - type : string en SCREAMING_SNAKE_CASE
- * - data : array avec clés en camelCase (ce que l'utilisateur veut)
+ * - data : array avec clés en camelCase (valeurs must be strings)
  */
 class FcmMessageData
 {
@@ -21,6 +21,7 @@ class FcmMessageData
     ) {
         $this->validateTypeCase($type);
         $this->validateDataKeysCase($data);
+        $this->validateDataValues($data);
     }
 
     private function validateTypeCase(string $type): void
@@ -47,39 +48,35 @@ class FcmMessageData
         }
     }
 
+    private function validateDataValues(array $data): void
+    {
+        foreach ($data as $key => $value) {
+            if (!is_string($value)) {
+                throw new InvalidArgumentException(
+                    sprintf('La valeur de "%s" doit être une string, %s donné', $key, gettype($value))
+                );
+            }
+        }
+    }
+
     public static function make(string $type, array $data = []): self
     {
         return new self($type, $data);
     }
 
-    public static function info(string $title, string $body, array $data = []): self
+    public static function info(string $title, string $body): self
     {
-        return new self('INFO', array_merge(['title' => $title, 'body' => $body], $data));
+        return new self('INFO', [
+            'title' => $title,
+            'body' => $body
+        ]);
     }
 
-    public static function alert(string $title, string $body, array $data = []): self
+    public static function ping(): self
     {
-        return new self('ALERT', array_merge(['title' => $title, 'body' => $body], $data));
-    }
-
-    public static function warning(string $title, string $body, array $data = []): self
-    {
-        return new self('WARNING', array_merge(['title' => $title, 'body' => $body], $data));
-    }
-
-    public static function success(string $title, string $body, array $data = []): self
-    {
-        return new self('SUCCESS', array_merge(['title' => $title, 'body' => $body], $data));
-    }
-
-    public static function error(string $title, string $body, array $data = []): self
-    {
-        return new self('ERROR', array_merge(['title' => $title, 'body' => $body], $data));
-    }
-
-    public static function ping(array $data = []): self
-    {
-        return new self('PING', $data);
+        return new self('PING', [
+            'connected' => 'true'
+        ]);
     }
 
     public function toArray(): array

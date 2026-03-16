@@ -54,18 +54,29 @@ final class FcmMessageDataTest extends TestCase
     }
 
     /**
-     * Accepts valid camelCase keys.
+     * Verifies that data values must be strings.
      */
-    public function test_accepts_valid_camel_case_keys(): void
+    public function test_validates_data_values_are_strings(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('doit être une string');
+
+        new FcmMessageData(type: 'INFO', data: ['orderId' => 123]);
+    }
+
+    /**
+     * Accepts valid camelCase keys with string values.
+     */
+    public function test_accepts_valid_camel_case_keys_with_string_values(): void
     {
         $this->expectNotToPerformAssertions();
 
         new FcmMessageData(type: 'INFO', data: [
             'firstName' => 'John',
             'lastName' => 'Doe',
-            'orderId' => 123,
-            'isActive' => true,
-            'createdAt' => time(),
+            'orderId' => '123',
+            'isActive' => 'true',
+            'createdAt' => (string) time(),
         ]);
     }
 
@@ -74,86 +85,17 @@ final class FcmMessageDataTest extends TestCase
      */
     public function test_info_helper_creates_correct_message(): void
     {
-        // Act: Create an info notification with custom data
+        // Act: Create an info notification
         $message = FcmMessageData::info(
             title: 'Info Title',
-            body: 'Info Body',
-            data: ['customKey' => 'customValue']
+            body: 'Info Body'
         );
 
         // Assert: Verify info-specific configuration
         $this->assertEquals('INFO', $message->type);
         $this->assertEquals('Info Title', $message->data['title']);
         $this->assertEquals('Info Body', $message->data['body']);
-        $this->assertEquals('customValue', $message->data['customKey']);
-    }
-
-    /**
-     * Verifies that alert notifications are properly configured.
-     */
-    public function test_alert_helper_creates_correct_message(): void
-    {
-        // Act: Create an alert notification
-        $message = FcmMessageData::alert(
-            title: 'Alert Title',
-            body: 'Alert Body'
-        );
-
-        // Assert: Alert should have appropriate type
-        $this->assertEquals('ALERT', $message->type);
-        $this->assertEquals('Alert Title', $message->data['title']);
-        $this->assertEquals('Alert Body', $message->data['body']);
-    }
-
-    /**
-     * Ensures warning notifications have correct type.
-     */
-    public function test_warning_helper_creates_correct_message(): void
-    {
-        // Act: Create a warning notification
-        $message = FcmMessageData::warning(
-            title: 'Warning Title',
-            body: 'Warning Body'
-        );
-
-        // Assert: Warning should have appropriate type
-        $this->assertEquals('WARNING', $message->type);
-        $this->assertEquals('Warning Title', $message->data['title']);
-        $this->assertEquals('Warning Body', $message->data['body']);
-    }
-
-    /**
-     * Validates that success notifications are properly configured.
-     */
-    public function test_success_helper_creates_correct_message(): void
-    {
-        // Act: Create a success notification
-        $message = FcmMessageData::success(
-            title: 'Success Title',
-            body: 'Success Body'
-        );
-
-        // Assert: Success should have appropriate type
-        $this->assertEquals('SUCCESS', $message->type);
-        $this->assertEquals('Success Title', $message->data['title']);
-        $this->assertEquals('Success Body', $message->data['body']);
-    }
-
-    /**
-     * Confirms that error notifications have correct type.
-     */
-    public function test_error_helper_creates_correct_message(): void
-    {
-        // Act: Create an error notification
-        $message = FcmMessageData::error(
-            title: 'Error Title',
-            body: 'Error Body'
-        );
-
-        // Assert: Error should have appropriate type
-        $this->assertEquals('ERROR', $message->type);
-        $this->assertEquals('Error Title', $message->data['title']);
-        $this->assertEquals('Error Body', $message->data['body']);
+        $this->assertCount(2, $message->data);
     }
 
     /**
@@ -162,11 +104,12 @@ final class FcmMessageDataTest extends TestCase
     public function test_ping_helper_creates_correct_message(): void
     {
         // Act: Create a ping (silent) notification
-        $message = FcmMessageData::ping(['customKey' => 'value']);
+        $message = FcmMessageData::ping();
 
-        // Assert: Ping should have correct type and data
+        // Assert: Ping should have correct type and default data
         $this->assertEquals('PING', $message->type);
-        $this->assertEquals('value', $message->data['customKey']);
+        $this->assertEquals('true', $message->data['connected']);
+        $this->assertCount(1, $message->data);
     }
 
     /**
@@ -179,15 +122,15 @@ final class FcmMessageDataTest extends TestCase
             type: 'CUSTOM_EVENT',
             data: [
                 'eventName' => 'user_login',
-                'userId' => 123,
-                'timestamp' => time()
+                'userId' => '123',
+                'timestamp' => (string) time()
             ]
         );
 
         // Assert: Custom type and data are preserved
         $this->assertEquals('CUSTOM_EVENT', $message->type);
         $this->assertEquals('user_login', $message->data['eventName']);
-        $this->assertEquals(123, $message->data['userId']);
+        $this->assertEquals('123', $message->data['userId']);
     }
 
     /**
@@ -198,8 +141,7 @@ final class FcmMessageDataTest extends TestCase
         // Arrange: Create a message
         $message = FcmMessageData::info(
             title: 'Test',
-            body: 'Body',
-            data: ['extra' => 'data']
+            body: 'Body'
         );
 
         // Act: Convert to array
@@ -210,8 +152,7 @@ final class FcmMessageDataTest extends TestCase
             'type' => 'INFO',
             'data' => [
                 'title' => 'Test',
-                'body' => 'Body',
-                'extra' => 'data'
+                'body' => 'Body'
             ]
         ], $array);
     }
